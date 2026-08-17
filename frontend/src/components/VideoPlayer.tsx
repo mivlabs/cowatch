@@ -68,8 +68,8 @@ const RutubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isHo
         if (data.type === 'player:changeState') {
           const state = data.data?.state;
           if (isSyncingRef.current || isInitialLoadRef.current) return; // 🔥 Игнорируем во время начальной загрузки
-          if (state === 'playing') onPlayRef.current(currentTimeRef.current);
-          else if (state === 'paused' || state === 'pause') onPauseRef.current(currentTimeRef.current);
+          if (state === 'playing' && isHost) onPlayRef.current(currentTimeRef.current);
+          else if ((state === 'paused' || state === 'pause') && isHost) onPauseRef.current(currentTimeRef.current);
         }
         if (data.type === 'player:currentTime') {
           const newTime = data.data?.time || 0;
@@ -135,16 +135,12 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
       isInitialLoadRef.current = false;
     }, 3000);
     return () => clearTimeout(timer);
-  }, [url]); // Сбрасываем таймер при смене URL
+  }, [url]);
 
-  if (!url || url.trim() === '') {
-    return <div className="flex-1 flex items-center justify-center bg-black"><VideoPlaceholder isHost={isHost} /></div>;
-  }
-
-  const videoType = getVideoType(url);
+  const videoType = url ? getVideoType(url) : 'file';
 
   useEffect(() => {
-    if (videoType === 'rutube') return;
+    if (!url || videoType === 'rutube') return;
     if (videoEvents.length === 0) return;
 
     const latest = videoEvents[videoEvents.length - 1];
@@ -155,10 +151,10 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
     lastProcessedEventId.current = eventId;
 
     if (latest.type === 'video_play') {
-      isSyncingRef.current = true; 
+      isSyncingRef.current = true;
       setPlaying(true);
       playerRef.current?.seekTo(latest.position, 'seconds');
-      setTimeout(() => { isSyncingRef.current = false; }, 1500); 
+      setTimeout(() => { isSyncingRef.current = false; }, 1500);
     } else if (latest.type === 'video_pause') {
       isSyncingRef.current = true;
       setPlaying(false);
@@ -170,7 +166,11 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
       playerRef.current?.seekTo(latest.position, 'seconds');
       setTimeout(() => { isSyncingRef.current = false; }, 1500);
     }
-  }, [videoEvents, videoType]);
+  }, [videoEvents, videoType, url]);
+
+  if (!url || url.trim() === '') {
+    return <div className="flex-1 flex items-center justify-center bg-black"><VideoPlaceholder isHost={isHost} /></div>;
+  }
 
   const handlePlay = () => {
     if (isSyncingRef.current || isInitialLoadRef.current) return; // 🔥 Защита от начальной загрузки

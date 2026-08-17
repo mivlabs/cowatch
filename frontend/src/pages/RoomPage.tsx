@@ -27,6 +27,7 @@ export function RoomPage() {
   const [chatInput, setChatInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [activeReactions, setActiveReactions] = useState<VideoReaction[]>([]);
+  const processedReactionIds = useRef(new Set<string>());
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -50,21 +51,19 @@ export function RoomPage() {
     enabled: !!code,
   });
 
-  // 🔥 ИСПРАВЛЕНИЕ: Вызываем setActiveReactions ТОЛЬКО если есть новые реакции
   useEffect(() => {
     const newReactions = messages.filter((msg): msg is VideoReaction => msg.type === 'video_reaction');
-    if (newReactions.length === 0) return; // <-- РАННИЙ ВЫХОД, если реакций нет!
-
-    const existingIds = new Set(activeReactions.map(r => `${r.user_id}-${r.timestamp}`));
-    const uniqueNewReactions = newReactions.filter(
-      r => !existingIds.has(`${r.user_id}-${r.timestamp}`)
-    );
+    const uniqueNewReactions = newReactions.filter((r) => {
+      const id = `${r.user_id}-${r.timestamp}`;
+      if (processedReactionIds.current.has(id)) return false;
+      processedReactionIds.current.add(id);
+      return true;
+    });
 
     if (uniqueNewReactions.length > 0) {
-      setActiveReactions(prev => [...prev, ...uniqueNewReactions]);
+      setActiveReactions((prev) => [...prev, ...uniqueNewReactions]);
     }
-    // Если uniqueNewReactions.length === 0, ничего не делаем и НЕ вызываем setState!
-  }, [messages, activeReactions]); // <-- Добавили activeReactions в зависимости для корректной работы Set
+  }, [messages]);
 
   // 🔥 ИСПРАВЛЕНИЕ 2: Безопасная очистка реакций
   useEffect(() => {

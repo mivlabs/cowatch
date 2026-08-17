@@ -37,7 +37,7 @@ function RutubePlayer({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }:
 }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const currentTimeRef = useRef(0);
-  const lastTimeRef = useRef(0); // 🔥 Для детекции перемотки
+  const lastTimeRef = useRef(0);
   const isSyncingRef = useRef(false);
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastEventRef = useRef('');
@@ -62,12 +62,10 @@ function RutubePlayer({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }:
           else if (state === 'paused' || state === 'pause') onPauseRef.current(currentTimeRef.current);
         }
 
-        // 🔥 Отслеживаем currentTime для детекции перемотки
         if (data.type === 'player:currentTime') {
           const newTime = data.data?.time || 0;
           const diff = Math.abs(newTime - lastTimeRef.current);
           
-          // Если время прыгнуло больше чем на 1.5 секунды — это перемотка!
           if (lastTimeRef.current > 0 && diff > 1.5 && isHost && !isSyncingRef.current) {
             console.log('🔀 Rutube: Хост перемотал на', newTime.toFixed(2), 'diff:', diff.toFixed(2));
             onSeekRef.current(newTime);
@@ -91,6 +89,10 @@ function RutubePlayer({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }:
   useEffect(() => {
     if (videoEvents.length === 0) return;
     const latest = videoEvents[videoEvents.length - 1];
+    
+    // Игнорируем событие смены видео в этом эффекте, чтобы не было конфликтов
+    if (latest.type === 'video_changed') return;
+
     const eventId = `${latest.type}-${latest.timestamp}`;
     if (eventId === lastEventRef.current) return;
     lastEventRef.current = eventId;
@@ -116,6 +118,7 @@ function RutubePlayer({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }:
 
   return (
     <iframe
+      key={videoId} // 🔥 МАГИЯ: Пересоздаем iframe при смене видео
       ref={iframeRef}
       src={`https://rutube.ru/play/embed/${videoId}`}
       className="w-full h-full"
@@ -132,34 +135,12 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
   const playerRef = useRef<ReactPlayer>(null);
   const [playing, setPlaying] = useState(false);
   const lastEventRef = useRef('');
-  const lastTimeRef = useRef(0); // 🔥 ДЛЯ ДЕТЕКЦИИ ПЕРЕМОТКИ
+  const lastTimeRef = useRef(0);
   
-  const [localUrl, setLocalUrl] = useState(url);
-  console.log('🎥 VideoPlayer получил URL:', url, 'localUrl:', localUrl);
+  console.log('🎥 VideoPlayer получил URL:', url);
   
-  // Обновляем локальный URL при изменении props
-  useEffect(() => {
-    setLocalUrl(url);
-  }, [url]);
-  
-  // 🔥 Слушаем событие video_changed из WebSocket
-  useEffect(() => {
-    const changedEvent = videoEvents.findLast((msg): msg is VideoChangedEvent => 
-      msg.type === 'video_changed'
-    );
-    
-    if (changedEvent && changedEvent.url !== localUrl) {
-      console.log('🎬 Видео изменилось:', changedEvent.url);
-      setLocalUrl(changedEvent.url);
-      
-      // Сбрасываем состояние плеера
-      setPlaying(false);
-      lastTimeRef.current = 0;
-    }
-  }, [videoEvents, localUrl]);
-
-    // 🔥 Если видео не выбрано — показываем заглушку
-  if (!localUrl || localUrl.trim() === '') {
+  // 🔥 Если видео не выбрано — показываем заглушку
+  if (!url || url.trim() === '') {
     return (
       <div className="flex-1 flex items-center justify-center bg-black">
         <VideoPlaceholder isHost={isHost} />
@@ -167,14 +148,18 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
     );
   }
 
-  const videoType = getVideoType(localUrl);
+  const videoType = getVideoType(url);
 
-  // 1. Реакция на события от других участников
+  // 🔥 ЭФФЕКТ 1: Реакция только на Play/Pause/Seek (ИГНОРИРУЕМ video_changed)
   useEffect(() => {
     if (videoType === 'rutube') return;
     if (videoEvents.length === 0) return;
 
     const latest = videoEvents[videoEvents.length - 1];
+    
+    // Смена видео обрабатывается автоматически через изменение пропа `url` и `key`
+    if (latest.type === 'video_changed') return;
+
     const eventId = `${latest.type}-${latest.timestamp}`;
     if (eventId === lastEventRef.current) return;
     lastEventRef.current = eventId;
@@ -186,7 +171,6 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
       setPlaying(false);
       playerRef.current?.seekTo(latest.position, 'seconds');
     } else if (latest.type === 'video_seek') {
-      // При перемотке сначала ставим на паузу, чтобы не было глюков, потом мотаем
       setPlaying(false);
       playerRef.current?.seekTo(latest.position, 'seconds');
     }
@@ -202,17 +186,13 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
     if (isHost) onPause(playerRef.current?.getCurrentTime() || 0);
   };
 
-  // 🔥 ГЛАВНАЯ МАГИЯ: Детекция перемотки по скачку времени
+  // 🔥 Детекция перемотки по скачку времени
   const handleProgress = (state: { playedSeconds: number }) => {
     if (!isHost) return;
     
     const currentTime = state.playedSeconds;
     const diff = Math.abs(currentTime - lastTimeRef.current);
     
-    // Логируем каждый вызов для отладки
-    console.log(`📊 Прогресс: ${currentTime.toFixed(2)}s, diff: ${diff.toFixed(2)}s`);
-    
-    // Если время прыгнуло больше чем на 1.5 секунды, это точно перемотка ползунком!
     if (lastTimeRef.current > 0 && diff > 1.5) {
       console.log('🔀 Хост перемотал видео на:', currentTime.toFixed(2));
       onSeek(currentTime);
@@ -221,7 +201,7 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
   };
 
   if (videoType === 'rutube') {
-    const rutubeId = extractRutubeId(localUrl);
+    const rutubeId = extractRutubeId(url);
     if (!rutubeId) {
       return (
         <div className="flex-1 flex items-center justify-center bg-black text-white">
@@ -237,8 +217,8 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
           videoEvents={videoEvents} 
           onPlay={onPlay} 
           onPause={onPause}
-          onSeek={onSeek}  // 🔥 Передаём onSeek
-          isHost={isHost}  // 🔥 Передаём isHost
+          onSeek={onSeek}
+          isHost={isHost}
         />
         {!isHost && (
           <div className="absolute top-4 right-4 bg-primary/80 text-white px-3 py-1.5 rounded-full text-xs font-medium backdrop-blur-sm pointer-events-none">
@@ -252,13 +232,14 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
   return (
     <div className="flex-1 flex items-center justify-center bg-black relative">
       <ReactPlayer
+        key={url} // 🔥 ГЛАВНАЯ МАГИЯ: При смене URL React полностью пересоздает плеер, убивая любые баги и циклы!
         ref={playerRef}
-        url={localUrl}
+        url={url}
         playing={playing}
         controls={isHost}
         onPlay={handlePlay}
         onPause={handlePause}
-        onProgress={handleProgress} // 🔥 Подключаем детектор перемотки
+        onProgress={handleProgress}
         progressInterval={200}
         width="100%"
         height="100%"

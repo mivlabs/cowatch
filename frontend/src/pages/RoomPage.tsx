@@ -18,6 +18,7 @@ import {
 } from '@/hooks/useRoomWebSocket';
 
 export function RoomPage() {
+  console.count('🔄 [RoomPage] RENDER'); // <-- ДОБАВИТЬ ЭТУ СТРОКУ
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();

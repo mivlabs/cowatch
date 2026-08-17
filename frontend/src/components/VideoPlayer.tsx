@@ -33,6 +33,7 @@ const RutubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isHo
   onSeek: (position: number) => void;
   isHost: boolean;
 }) => {
+  console.count('🔄 [RutubePlayer] RENDER'); // <-- ДОБАВИТЬ ЭТУ СТРОКУ
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const currentTimeRef = useRef(0);
   const lastTimeRef = useRef(0);
@@ -110,6 +111,7 @@ RutubePlayer.displayName = 'RutubePlayer';
 
 // ─── Основной компонент VideoPlayer ────────────────────────
 export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek }: VideoPlayerProps) {
+  console.count('🔄 [VideoPlayer] RENDER'); // <-- ДОБАВИТЬ ЭТУ СТРОКУ
   const playerRef = useRef<ReactPlayer>(null);
   const [playing, setPlaying] = useState(false);
   const lastTimeRef = useRef(0);

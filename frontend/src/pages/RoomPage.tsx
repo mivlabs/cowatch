@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query'; // 🔥 ДОБАВИЛИ useQueryClient
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Users, MessageSquare, Send, Copy, Wifi, WifiOff } from 'lucide-react';
 import { useState, useRef, useEffect, useMemo } from 'react';
@@ -21,28 +21,25 @@ export function RoomPage() {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
-  const queryClient = useQueryClient(); // 🔥 Инициализируем клиент для обновления кэша
+  const queryClient = useQueryClient();
   
   const [chatInput, setChatInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [activeReactions, setActiveReactions] = useState<VideoReaction[]>([]);
-  const [isSubmitting, setIsSubmitting] = useState(false); // 🔥 Защита от двойного клика
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 🔥 1. Редирект, если не авторизован
   useEffect(() => {
     if (!isAuthenticated) {
       navigate('/');
     }
   }, [isAuthenticated, navigate]);
 
-  // 🔥 2. WebSocket хук
   const { messages, isConnected, sendChatMessage, sendVideoEvent, sendReaction, isHost } = useRoomWebSocket({
     code: code || '',
     userId: user?.id || 1,
     username: user?.username || 'User',
   });
 
-  // 🔥 3. Загрузка данных комнаты
   const { data: room, isLoading, error } = useQuery<Room>({
     queryKey: ['room', code],
     queryFn: async () => {
@@ -52,28 +49,42 @@ export function RoomPage() {
     enabled: !!code,
   });
 
-  // 🔥 4. Логика реакций (ИСПРАВЛЕННАЯ: без бесконечного цикла)
+  // 🔥 ИСПРАВЛЕНИЕ 1: Пуленепробиваемая защита от бесконечного цикла реакций
   useEffect(() => {
     const newReactions = messages.filter((msg): msg is VideoReaction => msg.type === 'video_reaction');
     if (newReactions.length > 0) {
-      setActiveReactions(prev => [...prev, ...newReactions]);
+      setActiveReactions(prev => {
+        // Создаем Set существующих ID реакций для мгновенной проверки
+        const existingIds = new Set(prev.map(r => `${r.user_id}-${r.timestamp}`));
+        
+        // Оставляем только те реакции, которых еще нет в состоянии
+        const uniqueNewReactions = newReactions.filter(
+          r => !existingIds.has(`${r.user_id}-${r.timestamp}`)
+        );
+
+        // 🔥 КЛЮЧЕВОЙ МОМЕНТ: Если новых уникальных реакций нет, возвращаем старый стейт.
+        // Это ПРЕДОТВРАЩАЕТ ре-рендер и разрывает бесконечный цикл!
+        if (uniqueNewReactions.length === 0) return prev;
+
+        return [...prev, ...uniqueNewReactions];
+      });
     }
   }, [messages]);
 
-  // 🔥 ИСПРАВЛЕНИЕ: Запускаем очистку ОДИН РАЗ при монтировании компонента.
-  // Пустой массив зависимостей [] предотвращает бесконечный цикл!
+  // 🔥 ИСПРАВЛЕНИЕ 2: Безопасная очистка реакций (не вызывает ре-рендер, если ничего не удалилось)
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
-      setActiveReactions(prev => 
-        prev.filter(r => now - new Date(r.timestamp).getTime() < 3000)
-      );
-    }, 1000); // Проверяем каждую секунду
-    
+      setActiveReactions(prev => {
+        const filtered = prev.filter(r => now - new Date(r.timestamp).getTime() < 3000);
+        // Если длина массива не изменилась, значит ничего не удалилось. Возвращаем тот же объект.
+        if (filtered.length === prev.length) return prev;
+        return filtered;
+      });
+    }, 1000);
     return () => clearInterval(interval);
-  }, []); // <-- ВАЖНО: пустой массив!
+  }, []);
 
-  // Отправка реакции
   const handleReaction = (emoji: string) => {
     if (!user) return;
     sendReaction(emoji);
@@ -88,7 +99,6 @@ export function RoomPage() {
     setActiveReactions(prev => [...prev, reaction]);
   };
 
-  // 🔥 5. Фильтрация видео-событий
   const videoEvents = useMemo(() => 
     messages.filter((msg): msg is VideoEvent | VideoChangedEvent => 
       msg.type === 'video_play' || 
@@ -98,12 +108,10 @@ export function RoomPage() {
     ), [messages]
   );
 
-  // Автопрокрутка чата
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // 🔥 6. Обработчики действий
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
     if (chatInput.trim()) {
@@ -120,7 +128,6 @@ export function RoomPage() {
   const handleVideoPause = (position: number) => sendVideoEvent('video_pause', position);
   const handleVideoSeek = (position: number) => sendVideoEvent('video_seek', position);
 
-  // 🔥 7. Состояния загрузки и ошибки
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -146,10 +153,8 @@ export function RoomPage() {
 
   const videoUrl = room.current_movie_url || '';
 
-  // 🔥 8. Рендер
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
-      {/* Хедер */}
       <header className="border-b border-white/10 p-4 flex items-center justify-between bg-muted/30 backdrop-blur-md">
         <div className="flex items-center gap-4">
           <button onClick={() => navigate('/')} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
@@ -184,12 +189,11 @@ export function RoomPage() {
         </div>
       </header>
 
-      {/* Форма смены видео (только для хоста) */}
       {isHost && (
         <form 
           onSubmit={async (e) => {
             e.preventDefault();
-            if (isSubmitting) return; // 🔥 Защита от двойного клика
+            if (isSubmitting) return;
             
             setIsSubmitting(true);
             const formData = new FormData(e.currentTarget);
@@ -202,10 +206,7 @@ export function RoomPage() {
             
             try {
               await api.patch(`/rooms/${code}/video`, { url: url.trim() });
-              
-              // 🔥 МАГИЯ: Говорим React Query, что данные комнаты устарели и их нужно обновить!
               queryClient.invalidateQueries({ queryKey: ['room', code] });
-              
               (e.target as HTMLFormElement).reset();
             } catch (err) {
               console.error('Ошибка обновления видео:', err);
@@ -233,10 +234,7 @@ export function RoomPage() {
         </form>
       )}
 
-      {/* Основной контент */}
       <main className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-        
-        {/* Контейнер видео с реакциями */}
         <div className="flex-1 relative bg-black flex flex-col">
           <VideoPlayer
             url={videoUrl}
@@ -249,7 +247,6 @@ export function RoomPage() {
           
           <ReactionOverlay reactions={activeReactions} />
 
-          {/* Панель реакций */}
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-3 bg-black/60 backdrop-blur-md p-3 rounded-full border border-white/10 z-30">
             {['❤️', '🔥', '😂', '😮', '👏'].map(emoji => (
               <button
@@ -264,7 +261,6 @@ export function RoomPage() {
           </div>
         </div>
 
-        {/* Чат */}
         <div className="w-full lg:w-96 border-l border-white/10 bg-muted/20 flex flex-col">
           <div className="flex border-b border-white/10">
             <button className="flex-1 py-3 text-sm font-medium text-primary border-b-2 border-primary flex items-center justify-center gap-2">

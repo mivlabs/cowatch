@@ -1,5 +1,4 @@
 import { useRef, useEffect, useState, memo } from 'react';
-import ReactPlayer from 'react-player';
 import type { VideoEvent, VideoChangedEvent } from '@/hooks/useRoomWebSocket';
 import { VideoPlaceholder } from './VideoPlaceholder';
 
@@ -19,12 +18,34 @@ function getVideoType(url: string): 'youtube' | 'vimeo' | 'rutube' | 'file' {
   return 'file';
 }
 
+function extractYoutubeId(url: string): string | null {
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : null;
+}
+
 function extractRutubeId(url: string): string | null {
   const match = url.match(/rutube\.ru\/video\/([a-f0-9]{32})/i) || url.match(/rutube\.ru\/play\/embed\/([a-f0-9]{32})/i);
   return match ? match[1] : null;
 }
 
-// ─── Rutube Player (оставляем как есть, он работает) ───────────────────
+// ─── YouTube Player (Нативный iframe, как Rutube) ───────────────────
+const YouTubePlayer = memo(({ videoId, isHost }: { videoId: string; isHost: boolean }) => {
+  return (
+    <iframe
+      key={videoId}
+      src={`https://www.youtube.com/embed/${videoId}?enablejsapi=1&rel=0&modestbranding=1&controls=${isHost ? 1 : 0}`}
+      className="w-full h-full"
+      frameBorder="0"
+      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+      allowFullScreen
+      title="YouTube Video"
+    />
+  );
+});
+YouTubePlayer.displayName = 'YouTubePlayer';
+
+// ─── Rutube Player ───────────────────
 const RutubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }: {
   videoId: string;
   videoEvents: VideoEvent[];
@@ -116,94 +137,26 @@ RutubePlayer.displayName = 'RutubePlayer';
 
 // ─── Основной компонент VideoPlayer ────────────────────────
 export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek }: VideoPlayerProps) {
-  const playerRef = useRef<ReactPlayer>(null);
-  const [playing, setPlaying] = useState(false);
-  const lastTimeRef = useRef(0);
-  const lastProcessedEventId = useRef<string | null>(null);
-  const isSyncingRef = useRef(false);
-
   const cleanUrl = url ? url.trim() : '';
   const videoType = cleanUrl ? getVideoType(cleanUrl) : 'file';
 
   console.log('🎥 [VideoPlayer] Рендер. URL:', cleanUrl, 'Type:', videoType, 'isHost:', isHost);
 
-  useEffect(() => {
-    if (!cleanUrl || videoType === 'rutube') return;
-    if (videoEvents.length === 0) return;
-
-    const latest = videoEvents[videoEvents.length - 1];
-    if (latest.type === 'video_changed') return;
-
-    const eventId = `${latest.type}-${latest.timestamp}`;
-    if (lastProcessedEventId.current === eventId) return;
-    lastProcessedEventId.current = eventId;
-
-    const safeSeekTo = (position: number) => {
-      if (!playerRef.current) return;
-      const player = playerRef.current as any;
-      if (typeof player.seekTo === 'function') {
-        player.seekTo(position, 'seconds');
-      } else if (player.getInternalPlayer && typeof player.getInternalPlayer()?.currentTime === 'number') {
-        player.getInternalPlayer().currentTime = position;
-      }
-    };
-
-    if (latest.type === 'video_play') {
-      isSyncingRef.current = true; 
-      setPlaying(true);
-      safeSeekTo(latest.position);
-      setTimeout(() => { isSyncingRef.current = false; }, 1500); 
-    } else if (latest.type === 'video_pause') {
-      isSyncingRef.current = true;
-      setPlaying(false);
-      safeSeekTo(latest.position);
-      setTimeout(() => { isSyncingRef.current = false; }, 1500);
-    } else if (latest.type === 'video_seek') {
-      isSyncingRef.current = true;
-      setPlaying(false);
-      safeSeekTo(latest.position);
-      setTimeout(() => { isSyncingRef.current = false; }, 1500);
-    }
-  }, [videoEvents, videoType, cleanUrl]);
-
   if (!cleanUrl) {
     return <div className="flex-1 flex items-center justify-center bg-black"><VideoPlaceholder isHost={isHost} /></div>;
   }
 
-  const safeGetCurrentTime = () => {
-    if (!playerRef.current) return 0;
-    const player = playerRef.current as any;
-    if (typeof player.getCurrentTime === 'function') {
-      return player.getCurrentTime() || 0;
-    }
-    return 0;
-  };
+  if (videoType === 'youtube') {
+    const youtubeId = extractYoutubeId(cleanUrl);
+    if (!youtubeId) return <div className="flex-1 flex items-center justify-center bg-black text-white"><p>Неверная ссылка на YouTube</p></div>;
 
-  const handlePlay = () => {
-    if (isSyncingRef.current) return; 
-    setPlaying(true);
-    if (isHost) onPlay(safeGetCurrentTime());
-  };
-
-  const handlePause = () => {
-    if (isSyncingRef.current) return; 
-    setPlaying(false);
-    if (isHost) onPause(safeGetCurrentTime());
-  };
-
-  const handleProgress = (state: { playedSeconds: number }) => {
-    if (!isHost) return;
-    if (isSyncingRef.current) {
-      lastTimeRef.current = state.playedSeconds;
-      return;
-    }
-    const currentTime = state.playedSeconds;
-    const diff = Math.abs(currentTime - lastTimeRef.current);
-    if (lastTimeRef.current > 0 && diff > 1.5) {
-      onSeek(currentTime);
-    }
-    lastTimeRef.current = currentTime;
-  };
+    return (
+      <div className="flex-1 flex items-center justify-center bg-black relative">
+        <YouTubePlayer videoId={youtubeId} isHost={isHost} />
+        {!isHost && <div className="absolute top-4 right-4 bg-primary/80 text-white px-3 py-1.5 rounded-full text-xs font-medium backdrop-blur-sm pointer-events-none">🔄 Синхронизировано с хостом</div>}
+      </div>
+    );
+  }
 
   if (videoType === 'rutube') {
     const rutubeId = extractRutubeId(cleanUrl);
@@ -217,33 +170,15 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
     );
   }
 
-  // 🔥 YouTube/Vimeo - БЕЗ isInitialLoadRef, без блокировок
+  // Fallback для прямых ссылок на файлы (mp4 и т.д.)
   return (
     <div className="flex-1 flex items-center justify-center bg-black relative">
-      <ReactPlayer
-        key={cleanUrl}
-        ref={playerRef}
-        url={cleanUrl}
-        playing={playing}
-        controls={isHost}
-        onPlay={handlePlay}
-        onPause={handlePause}
-        onProgress={handleProgress}
-        progressInterval={200}
-        width="100%"
-        height="100%"
-        onReady={() => console.log('✅ [YouTube] Плеер готов и API загружен!')}
-        onError={(e) => console.error('❌ [YouTube] Ошибка загрузки:', e)}
-        config={{ 
-          youtube: { 
-            playerVars: { 
-              modestbranding: 1, 
-              rel: 0,
-              playsinline: 1,
-              enablejsapi: 1 // 🔥 КРИТИЧЕСКИ ВАЖНО: Разрешает react-player управлять YouTube
-            } 
-          }
-        }}
+      <video 
+        src={cleanUrl} 
+        controls={isHost} 
+        className="w-full h-full"
+        onPlay={() => isHost && onPlay(0)}
+        onPause={() => isHost && onPause(0)}
       />
       {!isHost && <div className="absolute top-4 right-4 bg-primary/80 text-white px-3 py-1.5 rounded-full text-xs font-medium backdrop-blur-sm pointer-events-none">🔄 Синхронизировано с хостом</div>}
     </div>

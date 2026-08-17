@@ -49,36 +49,36 @@ export function RoomPage() {
     enabled: !!code,
   });
 
-  // 🔥 ИСПРАВЛЕНИЕ 1: Пуленепробиваемая защита от бесконечного цикла реакций
+  // 🔥 ИСПРАВЛЕНИЕ 1: Пуленепробиваемая защита от бесконечного цикла реакций + ДЕБАГ
   useEffect(() => {
     const newReactions = messages.filter((msg): msg is VideoReaction => msg.type === 'video_reaction');
     if (newReactions.length > 0) {
       setActiveReactions(prev => {
-        // Создаем Set существующих ID реакций для мгновенной проверки
         const existingIds = new Set(prev.map(r => `${r.user_id}-${r.timestamp}`));
-        
-        // Оставляем только те реакции, которых еще нет в состоянии
         const uniqueNewReactions = newReactions.filter(
           r => !existingIds.has(`${r.user_id}-${r.timestamp}`)
         );
 
         // 🔥 КЛЮЧЕВОЙ МОМЕНТ: Если новых уникальных реакций нет, возвращаем старый стейт.
         // Это ПРЕДОТВРАЩАЕТ ре-рендер и разрывает бесконечный цикл!
-        if (uniqueNewReactions.length === 0) return prev;
+        if (uniqueNewReactions.length === 0) {
+          console.log('⏸️ [RoomPage] Реакции не изменились, отмена рендера.');
+          return prev;
+        }
 
+        console.log('✅ [RoomPage] Добавлены новые реакции:', uniqueNewReactions.length);
         return [...prev, ...uniqueNewReactions];
       });
     }
   }, [messages]);
 
-  // 🔥 ИСПРАВЛЕНИЕ 2: Безопасная очистка реакций (не вызывает ре-рендер, если ничего не удалилось)
+  // 🔥 ИСПРАВЛЕНИЕ 2: Безопасная очистка реакций
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
       setActiveReactions(prev => {
         const filtered = prev.filter(r => now - new Date(r.timestamp).getTime() < 3000);
-        // Если длина массива не изменилась, значит ничего не удалилось. Возвращаем тот же объект.
-        if (filtered.length === prev.length) return prev;
+        if (filtered.length === prev.length) return prev; // Не вызываем рендер, если ничего не удалилось
         return filtered;
       });
     }, 1000);
@@ -205,8 +205,20 @@ export function RoomPage() {
             }
             
             try {
+              // 1. Отправляем запрос на сервер
               await api.patch(`/rooms/${code}/video`, { url: url.trim() });
-              queryClient.invalidateQueries({ queryKey: ['room', code] });
+              
+              // 🔥 МАГИЯ: Обновляем кэш ПРЯМО ЗДЕСЬ, без сетевого refetch, который вызывал цикл!
+              queryClient.setQueryData(['room', code], (oldData: any) => {
+                if (!oldData) return oldData;
+                return {
+                  ...oldData,
+                  current_movie_url: url.trim(),
+                  current_position: 0,
+                  is_playing: false
+                };
+              });
+              
               (e.target as HTMLFormElement).reset();
             } catch (err) {
               console.error('Ошибка обновления видео:', err);

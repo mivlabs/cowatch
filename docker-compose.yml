@@ -1,0 +1,160 @@
+services:
+  # PostgreSQL — основная база данных
+  postgres:
+    image: postgres:16-alpine
+    container_name: realtime_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: realtime
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Redis — кэш, сессии, pub/sub для real-time
+  redis:
+    image: redis:7-alpine
+    container_name: realtime_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # RabbitMQ — очереди для уведомлений
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: realtime_rabbitmq
+    ports:
+      - "5672:5672"   # порт для приложений
+      - "15672:15672" # порт для веб-интерфейса
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  # Auth Service — аутентификация
+  auth:
+    build: ./services/auth
+    container_name: realtime_auth
+    ports:
+      - "8001:8000"
+    env_file:
+      - .env
+    environment:
+      SERVICE_NAME: auth
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/auth_db
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./services/auth:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Messages Service — сообщения и WebSocket
+  messages:
+    build: ./services/messages
+    container_name: realtime_messages
+    ports:
+      - "8002:8000"
+    env_file:
+      - .env
+    environment:
+      SERVICE_NAME: messages
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/messages_db
+      REDIS_URL: redis://redis:6379/1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./services/messages:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+
+  rooms:
+    build: ./services/rooms
+    container_name: realtime_rooms
+    ports:
+      - "8003:8000"
+    env_file:
+      - .env
+    environment:
+      SERVICE_NAME: rooms
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/rooms_db
+      REDIS_URL: redis://redis:6379/3
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./services/rooms:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Notifications Service — email/push уведомления
+  notifications:
+    build: ./services/notifications
+    container_name: realtime_notifications
+    ports:
+      - "8003:8000"
+    env_file:
+      - .env
+    environment:
+      SERVICE_NAME: notifications
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      REDIS_URL: redis://redis:6379/2
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./services/notifications:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Gateway — единая точка входа
+  gateway:
+    build: ./services/gateway
+    container_name: realtime_gateway
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      SERVICE_NAME: gateway
+      AUTH_SERVICE_URL: http://auth:8000
+      MESSAGES_SERVICE_URL: http://messages:8000
+      NOTIFICATIONS_SERVICE_URL: http://notifications:8000
+    depends_on:
+      - auth
+      - messages
+      - notifications
+    volumes:
+      - ./services/gateway:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:

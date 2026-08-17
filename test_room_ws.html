@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Room WebSocket Test</title>
+</head>
+<body>
+    <h2>Тест Room WebSocket</h2>
+    <input type="text" id="codeInput" placeholder="Код комнаты (например, ABC123)" style="width: 200px;">
+    <button onclick="connect()">Подключиться</button>
+    <br><br>
+    <input type="text" id="messageInput" placeholder="Сообщение..." style="width: 300px;">
+    <button onclick="sendMessage()">Отправить</button>
+    <ul id="messagesList" style="margin-top: 20px; border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll;"></ul>
+
+    <script>
+        let ws = null;
+        const messagesList = document.getElementById("messagesList");
+
+        function connect() {
+            const code = document.getElementById("codeInput").value;
+            if (!code) {
+                alert("Введите код комнаты");
+                return;
+            }
+
+            ws = new WebSocket(`ws://localhost:8003/rooms/ws/${code}`);
+            
+            ws.onmessage = function(event) {
+                const li = document.createElement("li");
+                li.textContent = `📨 ${event.data}`;
+                messagesList.appendChild(li);
+                messagesList.scrollTop = messagesList.scrollHeight;
+            };
+
+            ws.onclose = function() {
+                const li = document.createElement("li");
+                li.textContent = "🔴 Соединение закрыто";
+                li.style.color = "red";
+                messagesList.appendChild(li);
+            };
+        }
+
+        function sendMessage() {
+            const input = document.getElementById("messageInput");
+            if (ws && input.value.trim() !== "") {
+                ws.send(input.value);
+                input.value = "";
+            }
+        }
+
+        document.getElementById("messageInput").addEventListener("keypress", function(event) {
+            if (event.key === "Enter") sendMessage();
+        });
+    </script>
+</body>
+</html>

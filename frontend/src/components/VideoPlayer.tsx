@@ -232,14 +232,15 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
         progressInterval={200}
         width="100%"
         height="100%"
-        onReady={() => console.log('✅ [YouTube] Плеер готов!')}
-        onError={(e) => console.error('❌ [YouTube] Ошибка:', e)}
+        onReady={() => console.log('✅ [YouTube] Плеер готов и API загружен!')}
+        onError={(e) => console.error('❌ [YouTube] Ошибка загрузки:', e)}
         config={{ 
           youtube: { 
             playerVars: { 
               modestbranding: 1, 
               rel: 0,
-              autoplay: 0 // 🔥 ЯВНО ОТКЛЮЧАЕМ АВТОВОСПРОИЗВЕДЕНИЕ
+              playsinline: 1,
+              enablejsapi: 1 // 🔥 КРИТИЧЕСКИ ВАЖНО: Разрешает react-player управлять YouTube
             } 
           }
         }}

@@ -24,7 +24,7 @@ function extractRutubeId(url: string): string | null {
   return match ? match[1] : null;
 }
 
-// ─── Rutube Player (уже имел защиту, оставляем как есть) ───────────────────
+// ─── Rutube Player (уже имеет защиту) ───────────────────
 const RutubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }: {
   videoId: string;
   videoEvents: VideoEvent[];
@@ -56,7 +56,7 @@ const RutubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isHo
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
         if (data.type === 'player:changeState') {
           const state = data.data?.state;
-          if (isSyncingRef.current) return;
+          if (isSyncingRef.current) return; // 🔥 Игнорируем, если это ответ на нашу команду
           if (state === 'playing') onPlayRef.current(currentTimeRef.current);
           else if (state === 'paused' || state === 'pause') onPauseRef.current(currentTimeRef.current);
         }
@@ -65,7 +65,7 @@ const RutubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isHo
           if (isSyncingRef.current) {
             lastTimeRef.current = newTime;
             currentTimeRef.current = newTime;
-            return; // 🔥 ИГНОРИРУЕМ, ЕСЛИ ЭТО ОТВЕТ НА НАШУ КОМАНДУ
+            return; 
           }
           const diff = Math.abs(newTime - lastTimeRef.current);
           if (lastTimeRef.current > 0 && diff > 1.5 && isHost) {
@@ -115,7 +115,7 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
   const lastTimeRef = useRef(0);
   const lastProcessedEventId = useRef<string | null>(null);
   
-  // 🔥 НОВЫЙ ФЛАГ: Блокирует отправку событий на сервер, если перемотка была программной
+  // 🔥 ГЛАВНЫЙ ЗАЩИТНЫЙ ФЛАГ
   const isSyncingRef = useRef(false);
 
   if (!url || url.trim() === '') {
@@ -136,10 +136,10 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
     lastProcessedEventId.current = eventId;
 
     if (latest.type === 'video_play') {
-      isSyncingRef.current = true; // 🔥 Включаем блокировку
+      isSyncingRef.current = true; 
       setPlaying(true);
       playerRef.current?.seekTo(latest.position, 'seconds');
-      setTimeout(() => { isSyncingRef.current = false; }, 1500); // 🔥 Выключаем через 1.5 сек
+      setTimeout(() => { isSyncingRef.current = false; }, 1500); 
     } else if (latest.type === 'video_pause') {
       isSyncingRef.current = true;
       setPlaying(false);
@@ -153,17 +153,20 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
     }
   }, [videoEvents, videoType]);
 
+  // 🔥 ИСПРАВЛЕНИЕ: Игнорируем onPlay, если это программный запуск после seekTo
   const handlePlay = () => {
+    if (isSyncingRef.current) return; 
     setPlaying(true);
     if (isHost) onPlay(playerRef.current?.getCurrentTime() || 0);
   };
 
+  // 🔥 ИСПРАВЛЕНИЕ: Игнорируем onPause, если это программная пауза после seekTo
   const handlePause = () => {
+    if (isSyncingRef.current) return; 
     setPlaying(false);
     if (isHost) onPause(playerRef.current?.getCurrentTime() || 0);
   };
 
-  // 🔥 ИСПРАВЛЕННАЯ ФУНКЦИЯ ПРОГРЕССА
   const handleProgress = (state: { playedSeconds: number }) => {
     if (!isHost) return;
     
@@ -203,9 +206,9 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
         url={url}
         playing={playing}
         controls={isHost}
-        onPlay={handlePlay}
-        onPause={handlePause}
-        onProgress={handleProgress} // Теперь эта функция безопасна!
+        onPlay={handlePlay}      // 🔥 Теперь безопасно
+        onPause={handlePause}    // 🔥 Теперь безопасно
+        onProgress={handleProgress} 
         progressInterval={200}
         width="100%"
         height="100%"

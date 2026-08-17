@@ -24,7 +24,7 @@ function extractRutubeId(url: string): string | null {
   return match ? match[1] : null;
 }
 
-// ─── Rutube Player (уже имеет защиту) ───────────────────
+// ─── Rutube Player с защитой от начальной загрузки ───────────────────
 const RutubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }: {
   videoId: string;
   videoEvents: VideoEvent[];
@@ -33,13 +33,23 @@ const RutubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isHo
   onSeek: (position: number) => void;
   isHost: boolean;
 }) => {
-  console.count('🔄 [RutubePlayer] RENDER'); // <-- ДОБАВИТЬ ЭТУ СТРОКУ
+  console.count('🔄 [RutubePlayer] RENDER');
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const currentTimeRef = useRef(0);
   const lastTimeRef = useRef(0);
   const isSyncingRef = useRef(false);
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastProcessedEventId = useRef<string | null>(null);
+  
+  // 🔥 НОВЫЙ ФЛАГ: Блокируем все действия первые 3 секунды после загрузки
+  const isInitialLoadRef = useRef(true);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      isInitialLoadRef.current = false;
+      console.log('✅ [RutubePlayer] Initial load period ended');
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, []);
 
   const onPlayRef = useRef(onPlay); onPlayRef.current = onPlay;
   const onPauseRef = useRef(onPause); onPauseRef.current = onPause;
@@ -57,13 +67,13 @@ const RutubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isHo
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
         if (data.type === 'player:changeState') {
           const state = data.data?.state;
-          if (isSyncingRef.current) return; // 🔥 Игнорируем, если это ответ на нашу команду
+          if (isSyncingRef.current || isInitialLoadRef.current) return; // 🔥 Игнорируем во время начальной загрузки
           if (state === 'playing') onPlayRef.current(currentTimeRef.current);
           else if (state === 'paused' || state === 'pause') onPauseRef.current(currentTimeRef.current);
         }
         if (data.type === 'player:currentTime') {
           const newTime = data.data?.time || 0;
-          if (isSyncingRef.current) {
+          if (isSyncingRef.current || isInitialLoadRef.current) { // 🔥 Игнорируем во время начальной загрузки
             lastTimeRef.current = newTime;
             currentTimeRef.current = newTime;
             return; 
@@ -111,14 +121,21 @@ RutubePlayer.displayName = 'RutubePlayer';
 
 // ─── Основной компонент VideoPlayer ────────────────────────
 export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek }: VideoPlayerProps) {
-  console.count('🔄 [VideoPlayer] RENDER'); // <-- ДОБАВИТЬ ЭТУ СТРОКУ
+  console.count('🔄 [VideoPlayer] RENDER');
   const playerRef = useRef<ReactPlayer>(null);
   const [playing, setPlaying] = useState(false);
   const lastTimeRef = useRef(0);
   const lastProcessedEventId = useRef<string | null>(null);
-  
-  // 🔥 ГЛАВНЫЙ ЗАЩИТНЫЙ ФЛАГ
   const isSyncingRef = useRef(false);
+  
+  // 🔥 НОВЫЙ ФЛАГ ДЛЯ YOUTUBE/VIMEO
+  const isInitialLoadRef = useRef(true);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      isInitialLoadRef.current = false;
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [url]); // Сбрасываем таймер при смене URL
 
   if (!url || url.trim() === '') {
     return <div className="flex-1 flex items-center justify-center bg-black"><VideoPlaceholder isHost={isHost} /></div>;
@@ -155,24 +172,21 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
     }
   }, [videoEvents, videoType]);
 
-  // 🔥 ИСПРАВЛЕНИЕ: Игнорируем onPlay, если это программный запуск после seekTo
   const handlePlay = () => {
-    if (isSyncingRef.current) return; 
+    if (isSyncingRef.current || isInitialLoadRef.current) return; // 🔥 Защита от начальной загрузки
     setPlaying(true);
     if (isHost) onPlay(playerRef.current?.getCurrentTime() || 0);
   };
 
-  // 🔥 ИСПРАВЛЕНИЕ: Игнорируем onPause, если это программная пауза после seekTo
   const handlePause = () => {
-    if (isSyncingRef.current) return; 
+    if (isSyncingRef.current || isInitialLoadRef.current) return; // 🔥 Защита от начальной загрузки
     setPlaying(false);
     if (isHost) onPause(playerRef.current?.getCurrentTime() || 0);
   };
 
   const handleProgress = (state: { playedSeconds: number }) => {
-    if (!isHost) return;
+    if (!isHost || isInitialLoadRef.current) return; // 🔥 Игнорируем во время начальной загрузки
     
-    // Если мы в режиме синхронизации, просто обновляем время, но НЕ вызываем onSeek!
     if (isSyncingRef.current) {
       lastTimeRef.current = state.playedSeconds;
       return;
@@ -208,9 +222,9 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
         url={url}
         playing={playing}
         controls={isHost}
-        onPlay={handlePlay}      // 🔥 Теперь безопасно
-        onPause={handlePause}    // 🔥 Теперь безопасно
-        onProgress={handleProgress} 
+        onPlay={handlePlay}
+        onPause={handlePause}
+        onProgress={handleProgress}
         progressInterval={200}
         width="100%"
         height="100%"

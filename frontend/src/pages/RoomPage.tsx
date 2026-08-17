@@ -2,7 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Users, MessageSquare, Send, Copy, Wifi, WifiOff } from 'lucide-react';
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 import { api } from '@/lib/api';
 import type { Room } from '@/types/room';
@@ -18,7 +18,6 @@ import {
 } from '@/hooks/useRoomWebSocket';
 
 export function RoomPage() {
-  console.count('🔄 [RoomPage] RENDER'); // <-- ДОБАВИТЬ ЭТУ СТРОКУ
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
@@ -27,8 +26,10 @@ export function RoomPage() {
   const [chatInput, setChatInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [activeReactions, setActiveReactions] = useState<VideoReaction[]>([]);
-  const processedReactionIds = useRef(new Set<string>());
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // 🔥 ИСПРАВЛЕНИЕ CURSOR: Ref для дедупликации, чтобы не зависеть от activeReactions
+  const processedReactionIds = useRef(new Set<string>());
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -51,8 +52,10 @@ export function RoomPage() {
     enabled: !!code,
   });
 
+  // 🔥 ИСПРАВЛЕНИЕ CURSOR: Зависимость ТОЛЬКО от [messages]. Ref предотвращает дубликаты.
   useEffect(() => {
     const newReactions = messages.filter((msg): msg is VideoReaction => msg.type === 'video_reaction');
+
     const uniqueNewReactions = newReactions.filter((r) => {
       const id = `${r.user_id}-${r.timestamp}`;
       if (processedReactionIds.current.has(id)) return false;
@@ -65,13 +68,13 @@ export function RoomPage() {
     }
   }, [messages]);
 
-  // 🔥 ИСПРАВЛЕНИЕ 2: Безопасная очистка реакций
+  // Безопасная очистка реакций
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
       setActiveReactions(prev => {
         const filtered = prev.filter(r => now - new Date(r.timestamp).getTime() < 3000);
-        if (filtered.length === prev.length) return prev; // Не вызываем рендер, если ничего не удалилось
+        if (filtered.length === prev.length) return prev;
         return filtered;
       });
     }, 1000);
@@ -81,7 +84,6 @@ export function RoomPage() {
   const handleReaction = (emoji: string) => {
     if (!user) return;
     sendReaction(emoji);
-    
     const reaction: VideoReaction = {
       type: 'video_reaction',
       emoji,
@@ -94,13 +96,9 @@ export function RoomPage() {
 
   const [videoEvents, setVideoEvents] = useState<(VideoEvent | VideoChangedEvent)[]>([]);
 
-  // 🔥 НОВОЕ: Слушаем только новые видео-события и добавляем их в стейт
   useEffect(() => {
     if (messages.length === 0) return;
-    
-    // Берем только последнее сообщение
     const lastMessage = messages[messages.length - 1];
-    
     const isVideoEvent = 
       lastMessage.type === 'video_play' || 
       lastMessage.type === 'video_pause' || 
@@ -109,12 +107,8 @@ export function RoomPage() {
 
     if (isVideoEvent) {
       setVideoEvents((prev) => {
-        // Проверяем, есть ли уже это событие (защита от дубликатов)
-        const exists = prev.some(
-          (e) => e.timestamp === lastMessage.timestamp && e.type === lastMessage.type
-        );
-        if (exists) return prev; // Если есть, не вызываем ре-рендер!
-        
+        const exists = prev.some((e) => e.timestamp === lastMessage.timestamp && e.type === lastMessage.type);
+        if (exists) return prev;
         return [...prev, lastMessage as VideoEvent | VideoChangedEvent];
       });
     }
@@ -202,31 +196,19 @@ export function RoomPage() {
           onSubmit={async (e) => {
             e.preventDefault();
             if (isSubmitting) return;
-            
             setIsSubmitting(true);
             const formData = new FormData(e.currentTarget);
             const url = formData.get('videoUrl') as string;
-            
             if (!url.trim()) {
               setIsSubmitting(false);
               return;
             }
-            
             try {
-              // 1. Отправляем запрос на сервер
               await api.patch(`/rooms/${code}/video`, { url: url.trim() });
-              
-              // 🔥 МАГИЯ: Обновляем кэш ПРЯМО ЗДЕСЬ, без сетевого refetch, который вызывал цикл!
               queryClient.setQueryData(['room', code], (oldData: any) => {
                 if (!oldData) return oldData;
-                return {
-                  ...oldData,
-                  current_movie_url: url.trim(),
-                  current_position: 0,
-                  is_playing: false
-                };
+                return { ...oldData, current_movie_url: url.trim(), current_position: 0, is_playing: false };
               });
-              
               (e.target as HTMLFormElement).reset();
             } catch (err) {
               console.error('Ошибка обновления видео:', err);
@@ -238,17 +220,8 @@ export function RoomPage() {
           className="border-b border-white/10 p-3 bg-muted/20 flex gap-2 items-center"
         >
           <span className="text-sm text-muted-foreground whitespace-nowrap">🎬 Сменить видео:</span>
-          <input
-            name="videoUrl"
-            type="text"
-            placeholder="Вставь ссылку на YouTube или Rutube..."
-            className="flex-1 px-3 py-2 bg-background border border-white/10 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-          />
-          <button 
-            type="submit"
-            disabled={isSubmitting}
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors whitespace-nowrap disabled:opacity-50 flex items-center gap-2"
-          >
+          <input name="videoUrl" type="text" placeholder="Вставь ссылку на YouTube или Rutube..." className="flex-1 px-3 py-2 bg-background border border-white/10 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-primary" />
+          <button type="submit" disabled={isSubmitting} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors whitespace-nowrap disabled:opacity-50 flex items-center gap-2">
             {isSubmitting ? 'Загрузка...' : 'Загрузить'}
           </button>
         </form>
@@ -256,27 +229,11 @@ export function RoomPage() {
 
       <main className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         <div className="flex-1 relative bg-black flex flex-col">
-          <VideoPlayer
-            url={videoUrl}
-            isHost={isHost}
-            videoEvents={videoEvents}
-            onPlay={handleVideoPlay}
-            onPause={handleVideoPause}
-            onSeek={handleVideoSeek}
-          />
-          
+          <VideoPlayer url={videoUrl} isHost={isHost} videoEvents={videoEvents} onPlay={handleVideoPlay} onPause={handleVideoPause} onSeek={handleVideoSeek} />
           <ReactionOverlay reactions={activeReactions} />
-
           <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-3 bg-black/60 backdrop-blur-md p-3 rounded-full border border-white/10 z-30">
             {['❤️', '🔥', '😂', '😮', '👏'].map(emoji => (
-              <button
-                key={emoji}
-                onClick={() => handleReaction(emoji)}
-                className="text-2xl hover:scale-125 transition-transform active:scale-95 p-1"
-                title="Отправить реакцию"
-              >
-                {emoji}
-              </button>
+              <button key={emoji} onClick={() => handleReaction(emoji)} className="text-2xl hover:scale-125 transition-transform active:scale-95 p-1">{emoji}</button>
             ))}
           </div>
         </div>
@@ -287,30 +244,21 @@ export function RoomPage() {
               <MessageSquare className="w-4 h-4" /> Чат
             </button>
           </div>
-
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             <AnimatePresence>
               {messages.filter(msg => msg.type === 'chat_message' || msg.type === 'system' || msg.type === 'connected').map((msg, index) => (
                 <motion.div key={index} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
                   {msg.type === 'system' || msg.type === 'connected' ? (
-                    <div className="text-center text-xs text-muted-foreground py-2">
-                      {msg.type === 'connected' ? msg.message : msg.content}
-                    </div>
+                    <div className="text-center text-xs text-muted-foreground py-2">{msg.type === 'connected' ? msg.message : msg.content}</div>
                   ) : (
                     <div className="flex gap-3">
                       <Avatar username={msg.username} size="sm" />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-baseline gap-2 mb-1">
-                          <span className="text-xs font-semibold text-foreground">
-                            {msg.username}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground opacity-50">
-                            {new Date(msg.timestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-                          </span>
+                          <span className="text-xs font-semibold text-foreground">{msg.username}</span>
+                          <span className="text-[10px] text-muted-foreground opacity-50">{new Date(msg.timestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
-                        <div className="bg-muted/50 p-2.5 rounded-lg rounded-tl-none text-sm break-words">
-                          {msg.content}
-                        </div>
+                        <div className="bg-muted/50 p-2.5 rounded-lg rounded-tl-none text-sm break-words">{msg.content}</div>
                       </div>
                     </div>
                   )}
@@ -319,22 +267,10 @@ export function RoomPage() {
             </AnimatePresence>
             <div ref={messagesEndRef} />
           </div>
-
           <div className="p-4 border-t border-white/10">
             <form onSubmit={handleSend} className="flex gap-2">
-              <input
-                type="text"
-                placeholder={isConnected ? "Написать сообщение..." : "Подключение..."}
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                disabled={!isConnected}
-                className="flex-1 px-3 py-2 bg-background border border-white/10 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
-              />
-              <button 
-                type="submit"
-                disabled={!isConnected || !chatInput.trim()}
-                className="p-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
-              >
+              <input type="text" placeholder={isConnected ? "Написать сообщение..." : "Подключение..."} value={chatInput} onChange={(e) => setChatInput(e.target.value)} disabled={!isConnected} className="flex-1 px-3 py-2 bg-background border border-white/10 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50" />
+              <button type="submit" disabled={!isConnected || !chatInput.trim()} className="p-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50">
                 <Send className="w-4 h-4" />
               </button>
             </form>

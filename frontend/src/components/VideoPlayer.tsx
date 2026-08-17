@@ -24,7 +24,6 @@ function extractRutubeId(url: string): string | null {
   return match ? match[1] : null;
 }
 
-// ─── Rutube Player с защитой от начальной загрузки ───────────────────
 const RutubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }: {
   videoId: string;
   videoEvents: VideoEvent[];
@@ -33,21 +32,16 @@ const RutubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isHo
   onSeek: (position: number) => void;
   isHost: boolean;
 }) => {
-  console.count('🔄 [RutubePlayer] RENDER');
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const currentTimeRef = useRef(0);
   const lastTimeRef = useRef(0);
   const isSyncingRef = useRef(false);
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastProcessedEventId = useRef<string | null>(null);
-  
-  // 🔥 НОВЫЙ ФЛАГ: Блокируем все действия первые 3 секунды после загрузки
   const isInitialLoadRef = useRef(true);
+
   useEffect(() => {
-    const timer = setTimeout(() => {
-      isInitialLoadRef.current = false;
-      console.log('✅ [RutubePlayer] Initial load period ended');
-    }, 3000);
+    const timer = setTimeout(() => { isInitialLoadRef.current = false; }, 3000);
     return () => clearTimeout(timer);
   }, []);
 
@@ -67,13 +61,14 @@ const RutubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isHo
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
         if (data.type === 'player:changeState') {
           const state = data.data?.state;
-          if (isSyncingRef.current || isInitialLoadRef.current) return; // 🔥 Игнорируем во время начальной загрузки
+          if (isSyncingRef.current || isInitialLoadRef.current) return;
+          // 🔥 ИСПРАВЛЕНИЕ CURSOR: Только хост может триггерить onPlay/onPause из iframe
           if (state === 'playing' && isHost) onPlayRef.current(currentTimeRef.current);
           else if ((state === 'paused' || state === 'pause') && isHost) onPauseRef.current(currentTimeRef.current);
         }
         if (data.type === 'player:currentTime') {
           const newTime = data.data?.time || 0;
-          if (isSyncingRef.current || isInitialLoadRef.current) { // 🔥 Игнорируем во время начальной загрузки
+          if (isSyncingRef.current || isInitialLoadRef.current) {
             lastTimeRef.current = newTime;
             currentTimeRef.current = newTime;
             return; 
@@ -119,26 +114,23 @@ const RutubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isHo
 });
 RutubePlayer.displayName = 'RutubePlayer';
 
-// ─── Основной компонент VideoPlayer ────────────────────────
 export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek }: VideoPlayerProps) {
-  console.count('🔄 [VideoPlayer] RENDER');
   const playerRef = useRef<ReactPlayer>(null);
   const [playing, setPlaying] = useState(false);
   const lastTimeRef = useRef(0);
   const lastProcessedEventId = useRef<string | null>(null);
   const isSyncingRef = useRef(false);
-  
-  // 🔥 НОВЫЙ ФЛАГ ДЛЯ YOUTUBE/VIMEO
   const isInitialLoadRef = useRef(true);
+
+  // 🔥 ИСПРАВЛЕНИЕ CURSOR: Вычисляем тип ДО хуков и early return
+  const videoType = url ? getVideoType(url) : 'file';
+
   useEffect(() => {
-    const timer = setTimeout(() => {
-      isInitialLoadRef.current = false;
-    }, 3000);
+    const timer = setTimeout(() => { isInitialLoadRef.current = false; }, 3000);
     return () => clearTimeout(timer);
   }, [url]);
 
-  const videoType = url ? getVideoType(url) : 'file';
-
+  // 🔥 ИСПРАВЛЕНИЕ CURSOR: Хук строго ВЫШЕ early return!
   useEffect(() => {
     if (!url || videoType === 'rutube') return;
     if (videoEvents.length === 0) return;
@@ -150,53 +142,69 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
     if (lastProcessedEventId.current === eventId) return;
     lastProcessedEventId.current = eventId;
 
+    const safeSeekTo = (position: number) => {
+      if (!playerRef.current) return;
+      const player = playerRef.current as any;
+      if (typeof player.seekTo === 'function') {
+        player.seekTo(position, 'seconds');
+      } else if (player.getInternalPlayer && typeof player.getInternalPlayer()?.currentTime === 'number') {
+        player.getInternalPlayer().currentTime = position;
+      }
+    };
+
     if (latest.type === 'video_play') {
-      isSyncingRef.current = true;
+      isSyncingRef.current = true; 
       setPlaying(true);
-      playerRef.current?.seekTo(latest.position, 'seconds');
-      setTimeout(() => { isSyncingRef.current = false; }, 1500);
+      safeSeekTo(latest.position);
+      setTimeout(() => { isSyncingRef.current = false; }, 1500); 
     } else if (latest.type === 'video_pause') {
       isSyncingRef.current = true;
       setPlaying(false);
-      playerRef.current?.seekTo(latest.position, 'seconds');
+      safeSeekTo(latest.position);
       setTimeout(() => { isSyncingRef.current = false; }, 1500);
     } else if (latest.type === 'video_seek') {
       isSyncingRef.current = true;
       setPlaying(false);
-      playerRef.current?.seekTo(latest.position, 'seconds');
+      safeSeekTo(latest.position);
       setTimeout(() => { isSyncingRef.current = false; }, 1500);
     }
   }, [videoEvents, videoType, url]);
 
+  // Early return теперь БЕЗОПАСЕН, так как все хуки уже объявлены
   if (!url || url.trim() === '') {
     return <div className="flex-1 flex items-center justify-center bg-black"><VideoPlaceholder isHost={isHost} /></div>;
   }
 
+  const safeGetCurrentTime = () => {
+    if (!playerRef.current) return 0;
+    const player = playerRef.current as any;
+    if (typeof player.getCurrentTime === 'function') {
+      return player.getCurrentTime() || 0;
+    }
+    return 0;
+  };
+
   const handlePlay = () => {
-    if (isSyncingRef.current || isInitialLoadRef.current) return; // 🔥 Защита от начальной загрузки
+    if (isSyncingRef.current || isInitialLoadRef.current) return; 
     setPlaying(true);
-    if (isHost) onPlay(playerRef.current?.getCurrentTime() || 0);
+    if (isHost) onPlay(safeGetCurrentTime());
   };
 
   const handlePause = () => {
-    if (isSyncingRef.current || isInitialLoadRef.current) return; // 🔥 Защита от начальной загрузки
+    if (isSyncingRef.current || isInitialLoadRef.current) return; 
     setPlaying(false);
-    if (isHost) onPause(playerRef.current?.getCurrentTime() || 0);
+    if (isHost) onPause(safeGetCurrentTime());
   };
 
   const handleProgress = (state: { playedSeconds: number }) => {
-    if (!isHost || isInitialLoadRef.current) return; // 🔥 Игнорируем во время начальной загрузки
-    
+    if (!isHost || isInitialLoadRef.current) return;
     if (isSyncingRef.current) {
       lastTimeRef.current = state.playedSeconds;
       return;
     }
-
     const currentTime = state.playedSeconds;
     const diff = Math.abs(currentTime - lastTimeRef.current);
-    
     if (lastTimeRef.current > 0 && diff > 1.5) {
-      console.log('🔀 Хост перемотал видео на:', currentTime.toFixed(2));
       onSeek(currentTime);
     }
     lastTimeRef.current = currentTime;

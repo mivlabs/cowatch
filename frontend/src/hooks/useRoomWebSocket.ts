@@ -42,7 +42,6 @@ export interface ConnectionMessage {
   is_host?: boolean;
 }
 
-// 🔥 ЕДИНОЕ объявление типа (никаких дубликатов!)
 export type WSMessage = ChatMessage | VideoEvent | VideoChangedEvent | VideoReaction | SystemMessage | ConnectionMessage;
 
 interface UseRoomWebSocketOptions {
@@ -53,6 +52,7 @@ interface UseRoomWebSocketOptions {
 
 export function useRoomWebSocket({ code, userId, username }: UseRoomWebSocketOptions) {
   const [messages, setMessages] = useState<WSMessage[]>([]);
+  const messagesRef = useRef<WSMessage[]>([]); // 🔥 Храним актуальное состояние здесь
   const [isConnected, setIsConnected] = useState(false);
   const [isHost, setIsHost] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
@@ -79,13 +79,29 @@ export function useRoomWebSocket({ code, userId, username }: UseRoomWebSocketOpt
           console.log('👑 Хост статус получен:', data.is_host);
         }
         
-        setMessages((prev) => [...prev, data]);
-      } catch {
-        setMessages((prev) => [...prev, {
+        // 🔥 ПРОФЕССИОНАЛЬНОЕ ОБНОВЛЕНИЕ СОСТОЯНИЯ БЕЗ ЦИКЛОВ
+        const lastMessage = messagesRef.current[messagesRef.current.length - 1];
+        
+        // Если это дубликат последнего сообщения, игнорируем его
+        if (lastMessage && 
+            lastMessage.timestamp === data.timestamp &&
+            lastMessage.type === data.type) {
+          console.log('⏸️ [WS] Игнорируем дубликат сообщения:', data.type);
+          return;
+        }
+
+        // Обновляем референс и стейт
+        messagesRef.current = [...messagesRef.current, data];
+        setMessages(messagesRef.current); // Передаем ту же ссылку, что и в ref
+        
+      } catch (error) {
+        const systemMsg: SystemMessage = {
           type: 'system',
           content: event.data,
           timestamp: new Date().toISOString(),
-        }]);
+        };
+        messagesRef.current = [...messagesRef.current, systemMsg];
+        setMessages(messagesRef.current);
       }
     };
 
@@ -128,7 +144,6 @@ export function useRoomWebSocket({ code, userId, username }: UseRoomWebSocketOpt
     }
   }, [userId]);
 
-  // 🔥 ОТПРАВКА РЕАКЦИЙ
   const sendReaction = useCallback((emoji: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       const reaction: VideoReaction = {

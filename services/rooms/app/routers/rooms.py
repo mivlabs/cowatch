@@ -117,6 +117,7 @@ async def update_room_video(
 
 @router.websocket("/ws/{code}")
 async def room_websocket(websocket: WebSocket, code: str):
+    print(f"🚀 [WS] ЗАПРОС ДОШЕЛ ДО ФУНКЦИИ! Комната: {code}") # <-- НОВЫЙ МАЯЧОК
     print(f"🟢 [WS] Попытка подключения к комнате: {code}")
     
     # 🔥 Извлекаем токен из query-параметра

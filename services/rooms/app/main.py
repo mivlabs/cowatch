@@ -3,9 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from app.database import engine, Base
-from app.models.room import Room, Participant
-from app.routers import router as rooms_router
-
+# 🔥 ЯВНЫЙ ИМПОРТ ПРЯМО ИЗ ФАЙЛА rooms.py
+from app.routers.rooms import router as rooms_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -13,7 +12,6 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
     yield
     await engine.dispose()
-
 
 app = FastAPI(
     title="Rooms Service",
@@ -30,8 +28,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 🔥 Явно подключаем роутер с комнатами и вебсокетами
 app.include_router(rooms_router)
-
 
 @app.get("/health")
 async def health_check():

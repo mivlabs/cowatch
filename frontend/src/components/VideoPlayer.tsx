@@ -26,7 +26,7 @@ function extractRutubeId(url: string): string | null {
   return match ? match[1] : null;
 }
 
-// ─── Rutube Player с детекцией перемотки ───────────────────
+// ─── Rutube Player с ЗАЩИТОЙ от бесконечного цикла ───────────────────
 function RutubePlayer({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }: {
   videoId: string;
   videoEvents: VideoEvent[];
@@ -49,6 +49,15 @@ function RutubePlayer({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }:
   const onSeekRef = useRef(onSeek);
   onSeekRef.current = onSeek;
 
+  // 🔥 Функция для безопасной установки таймера синхронизации
+  const blockSync = (ms = 2000) => {
+    isSyncingRef.current = true;
+    if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+    syncTimeoutRef.current = setTimeout(() => {
+      isSyncingRef.current = false;
+    }, ms);
+  };
+
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       try {
@@ -56,7 +65,7 @@ function RutubePlayer({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }:
         
         if (data.type === 'player:changeState') {
           const state = data.data?.state;
-          if (isSyncingRef.current) return;
+          if (isSyncingRef.current) return; // 🔥 Игнорируем, если мы сами инициировали действие
 
           if (state === 'playing') onPlayRef.current(currentTimeRef.current);
           else if (state === 'paused' || state === 'pause') onPauseRef.current(currentTimeRef.current);
@@ -64,10 +73,22 @@ function RutubePlayer({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }:
 
         if (data.type === 'player:currentTime') {
           const newTime = data.data?.time || 0;
+          
+          // 🔥 Если мы в режиме синхронизации, просто обновляем время и ВЫХОДИМ, не вызывая onSeek!
+          if (isSyncingRef.current) {
+            lastTimeRef.current = newTime;
+            currentTimeRef.current = newTime;
+            return;
+          }
+
           const diff = Math.abs(newTime - lastTimeRef.current);
           
-          if (lastTimeRef.current > 0 && diff > 1.5 && isHost && !isSyncingRef.current) {
+          if (lastTimeRef.current > 0 && diff > 1.5 && isHost) {
             console.log('🔀 Rutube: Хост перемотал на', newTime.toFixed(2), 'diff:', diff.toFixed(2));
+            
+            // 🔥 КРИТИЧЕСКИ ВАЖНО: Блокируем обратную связь НЕМЕДЛЕННО, чтобы iframe не вызвал новый цикл
+            blockSync(2500); // 2.5 секунды тишины после перемотки
+            
             onSeekRef.current(newTime);
           }
           
@@ -75,7 +96,7 @@ function RutubePlayer({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }:
           currentTimeRef.current = newTime;
         }
       } catch {
-        // Игнорируем не-JSON
+        // Игнорируем не-JSON сообщения
       }
     };
 
@@ -90,19 +111,19 @@ function RutubePlayer({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }:
     if (videoEvents.length === 0) return;
     const latest = videoEvents[videoEvents.length - 1];
     
-    // Игнорируем событие смены видео в этом эффекте, чтобы не было конфликтов
+    // Игнорируем смену видео здесь, это обрабатывается через key
     if (latest.type === 'video_changed') return;
 
     const eventId = `${latest.type}-${latest.timestamp}`;
-    if (eventId === lastEventRef.current) return;
-    lastEventRef.current = eventId;
+    if (eventId === lastEventRef.current) return; // Уже обработали это событие
+    
+    lastEventRef.current = eventId; // Запоминаем ТОЛЬКО после проверки
 
     const iframe = iframeRef.current;
     if (!iframe?.contentWindow) return;
 
-    isSyncingRef.current = true;
-    if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
-    syncTimeoutRef.current = setTimeout(() => { isSyncingRef.current = false; }, 1500);
+    // 🔥 Блокируем входящие сообщения от iframe на 2 секунды после нашей команды
+    blockSync(2000);
 
     if (latest.type === 'video_play') {
       iframe.contentWindow.postMessage(JSON.stringify({ type: 'player:play' }), '*');
@@ -118,7 +139,7 @@ function RutubePlayer({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }:
 
   return (
     <iframe
-      key={videoId} // 🔥 МАГИЯ: Пересоздаем iframe при смене видео
+      key={videoId} // Пересоздаем iframe при смене видео
       ref={iframeRef}
       src={`https://rutube.ru/play/embed/${videoId}`}
       className="w-full h-full"
@@ -139,7 +160,6 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
   
   console.log('🎥 VideoPlayer получил URL:', url);
   
-  // 🔥 Если видео не выбрано — показываем заглушку
   if (!url || url.trim() === '') {
     return (
       <div className="flex-1 flex items-center justify-center bg-black">
@@ -150,14 +170,12 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
 
   const videoType = getVideoType(url);
 
-  // 🔥 ЭФФЕКТ 1: Реакция только на Play/Pause/Seek (ИГНОРИРУЕМ video_changed)
+  // 🔥 ЭФФЕКТ: Реакция только на Play/Pause/Seek (ИГНОРИРУЕМ video_changed)
   useEffect(() => {
     if (videoType === 'rutube') return;
     if (videoEvents.length === 0) return;
 
     const latest = videoEvents[videoEvents.length - 1];
-    
-    // Смена видео обрабатывается автоматически через изменение пропа `url` и `key`
     if (latest.type === 'video_changed') return;
 
     const eventId = `${latest.type}-${latest.timestamp}`;
@@ -186,7 +204,6 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
     if (isHost) onPause(playerRef.current?.getCurrentTime() || 0);
   };
 
-  // 🔥 Детекция перемотки по скачку времени
   const handleProgress = (state: { playedSeconds: number }) => {
     if (!isHost) return;
     
@@ -232,7 +249,7 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
   return (
     <div className="flex-1 flex items-center justify-center bg-black relative">
       <ReactPlayer
-        key={url} // 🔥 ГЛАВНАЯ МАГИЯ: При смене URL React полностью пересоздает плеер, убивая любые баги и циклы!
+        key={url} // Магия React: пересоздание плеера при смене URL
         ref={playerRef}
         url={url}
         playing={playing}

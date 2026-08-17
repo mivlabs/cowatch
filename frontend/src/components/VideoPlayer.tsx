@@ -24,7 +24,7 @@ function extractRutubeId(url: string): string | null {
   return match ? match[1] : null;
 }
 
-// ─── Rutube Player с абсолютной защитой от циклов ───────────────────
+// ─── Rutube Player (уже имел защиту, оставляем как есть) ───────────────────
 const RutubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }: {
   videoId: string;
   videoEvents: VideoEvent[];
@@ -65,7 +65,7 @@ const RutubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isHo
           if (isSyncingRef.current) {
             lastTimeRef.current = newTime;
             currentTimeRef.current = newTime;
-            return;
+            return; // 🔥 ИГНОРИРУЕМ, ЕСЛИ ЭТО ОТВЕТ НА НАШУ КОМАНДУ
           }
           const diff = Math.abs(newTime - lastTimeRef.current);
           if (lastTimeRef.current > 0 && diff > 1.5 && isHost) {
@@ -114,6 +114,9 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
   const [playing, setPlaying] = useState(false);
   const lastTimeRef = useRef(0);
   const lastProcessedEventId = useRef<string | null>(null);
+  
+  // 🔥 НОВЫЙ ФЛАГ: Блокирует отправку событий на сервер, если перемотка была программной
+  const isSyncingRef = useRef(false);
 
   if (!url || url.trim() === '') {
     return <div className="flex-1 flex items-center justify-center bg-black"><VideoPlaceholder isHost={isHost} /></div>;
@@ -121,7 +124,6 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
 
   const videoType = getVideoType(url);
 
-  // 🔥 ЭФФЕКТ СИНХРОНИЗАЦИИ (Безопасный, теперь не вызовет цикл, т.к. RoomPage стабилен)
   useEffect(() => {
     if (videoType === 'rutube') return;
     if (videoEvents.length === 0) return;
@@ -134,14 +136,20 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
     lastProcessedEventId.current = eventId;
 
     if (latest.type === 'video_play') {
+      isSyncingRef.current = true; // 🔥 Включаем блокировку
       setPlaying(true);
       playerRef.current?.seekTo(latest.position, 'seconds');
+      setTimeout(() => { isSyncingRef.current = false; }, 1500); // 🔥 Выключаем через 1.5 сек
     } else if (latest.type === 'video_pause') {
+      isSyncingRef.current = true;
       setPlaying(false);
       playerRef.current?.seekTo(latest.position, 'seconds');
+      setTimeout(() => { isSyncingRef.current = false; }, 1500);
     } else if (latest.type === 'video_seek') {
+      isSyncingRef.current = true;
       setPlaying(false);
       playerRef.current?.seekTo(latest.position, 'seconds');
+      setTimeout(() => { isSyncingRef.current = false; }, 1500);
     }
   }, [videoEvents, videoType]);
 
@@ -155,11 +163,21 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
     if (isHost) onPause(playerRef.current?.getCurrentTime() || 0);
   };
 
+  // 🔥 ИСПРАВЛЕННАЯ ФУНКЦИЯ ПРОГРЕССА
   const handleProgress = (state: { playedSeconds: number }) => {
     if (!isHost) return;
+    
+    // Если мы в режиме синхронизации, просто обновляем время, но НЕ вызываем onSeek!
+    if (isSyncingRef.current) {
+      lastTimeRef.current = state.playedSeconds;
+      return;
+    }
+
     const currentTime = state.playedSeconds;
     const diff = Math.abs(currentTime - lastTimeRef.current);
+    
     if (lastTimeRef.current > 0 && diff > 1.5) {
+      console.log('🔀 Хост перемотал видео на:', currentTime.toFixed(2));
       onSeek(currentTime);
     }
     lastTimeRef.current = currentTime;
@@ -184,10 +202,10 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
         ref={playerRef}
         url={url}
         playing={playing}
-        controls={isHost} // 🔥 Контроли видны ТОЛЬКО хосту
+        controls={isHost}
         onPlay={handlePlay}
         onPause={handlePause}
-        onProgress={handleProgress}
+        onProgress={handleProgress} // Теперь эта функция безопасна!
         progressInterval={200}
         width="100%"
         height="100%"

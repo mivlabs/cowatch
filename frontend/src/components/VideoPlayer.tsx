@@ -29,23 +29,120 @@ function extractRutubeId(url: string): string | null {
   return match ? match[1] : null;
 }
 
-// ─── YouTube Player (Нативный iframe, как Rutube) ───────────────────
-const YouTubePlayer = memo(({ videoId, isHost }: { videoId: string; isHost: boolean }) => {
-  return (
-    <iframe
-      key={videoId}
-      src={`https://www.youtube.com/embed/${videoId}?enablejsapi=1&rel=0&modestbranding=1&controls=${isHost ? 1 : 0}`}
-      className="w-full h-full"
-      frameBorder="0"
-      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-      allowFullScreen
-      title="YouTube Video"
-    />
-  );
+// ─── YouTube Player (Официальный IFrame API) ───────────────────
+const YouTubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }: {
+  videoId: string;
+  videoEvents: VideoEvent[];
+  onPlay: (position: number) => void;
+  onPause: (position: number) => void;
+  onSeek: (position: number) => void;
+  isHost: boolean;
+}) => {
+  const playerRef = useRef<any>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isSyncingRef = useRef(false);
+  const lastProcessedEventId = useRef<string | null>(null);
+  const lastTimeRef = useRef(0);
+
+  useEffect(() => {
+    // 1. Загружаем скрипт YouTube IFrame API, если его еще нет
+    if (!(window as any).YT) {
+      const tag = document.createElement('script');
+      tag.src = "https://www.youtube.com/iframe_api";
+      const firstScriptTag = document.getElementsByTagName('script')[0];
+      firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+    }
+
+    // 2. Инициализируем плеер
+    const initPlayer = () => {
+      if (containerRef.current) {
+        playerRef.current = new (window as any).YT.Player(containerRef.current, {
+          videoId: videoId,
+          playerVars: {
+            autoplay: 0,
+            controls: isHost ? 1 : 0, // Контролы только у хоста
+            rel: 0,
+            modestbranding: 1,
+            enablejsapi: 1
+          },
+          events: {
+            onReady: () => {
+              console.log('✅ [YouTube] IFrame API успешно инициализирован!');
+              lastTimeRef.current = 0;
+            },
+            onStateChange: (event: any) => {
+              if (isSyncingRef.current) return; // Игнорируем, если это реакция на нашу команду
+              // 1 = playing, 2 = paused
+              if (event.data === 1 && isHost) {
+                onPlay(playerRef.current.getCurrentTime());
+              } else if (event.data === 2 && isHost) {
+                onPause(playerRef.current.getCurrentTime());
+              }
+            }
+          }
+        });
+      }
+    };
+
+    if ((window as any).YT && (window as any).YT.Player) {
+      initPlayer();
+    } else {
+      (window as any).onYouTubeIframeAPIReady = initPlayer;
+    }
+
+    return () => {
+      if (playerRef.current) {
+        playerRef.current.destroy();
+      }
+    };
+  }, [videoId, isHost, onPlay, onPause]);
+
+  // 3. 🔥 Детекция перемотки для хоста (аналог onProgress в react-player)
+  useEffect(() => {
+    if (!isHost || !playerRef.current) return;
+    const interval = setInterval(() => {
+      if (isSyncingRef.current) return;
+      const currentTime = playerRef.current.getCurrentTime();
+      const diff = Math.abs(currentTime - lastTimeRef.current);
+      
+      if (lastTimeRef.current > 0 && diff > 1.5) {
+        console.log('🔀 [YouTube] Хост перемотал на:', currentTime.toFixed(2));
+        onSeek(currentTime);
+      }
+      lastTimeRef.current = currentTime;
+    }, 500); // Проверяем каждые 0.5 сек
+    return () => clearInterval(interval);
+  }, [isHost, onSeek]);
+
+  // 4. 🔥 Реакция на события WebSocket (синхронизация для всех)
+  useEffect(() => {
+    if (videoEvents.length === 0 || !playerRef.current) return;
+    const latest = videoEvents[videoEvents.length - 1];
+    if (latest.type === 'video_changed') return;
+
+    const eventId = `${latest.type}-${latest.timestamp}`;
+    if (lastProcessedEventId.current === eventId) return;
+    lastProcessedEventId.current = eventId;
+
+    isSyncingRef.current = true;
+    setTimeout(() => { isSyncingRef.current = false; }, 1500);
+
+    if (latest.type === 'video_play') {
+      playerRef.current.seekTo(latest.position, true);
+      playerRef.current.playVideo();
+    } else if (latest.type === 'video_pause') {
+      playerRef.current.seekTo(latest.position, true);
+      playerRef.current.pauseVideo();
+    } else if (latest.type === 'video_seek') {
+      playerRef.current.seekTo(latest.position, true);
+    }
+  }, [videoEvents]);
+
+  return <div ref={containerRef} className="w-full h-full" />;
 });
 YouTubePlayer.displayName = 'YouTubePlayer';
 
-// ─── Rutube Player ───────────────────
+// ─── Rutube Player (Оставляем без изменений, он идеален) ───────────────────
 const RutubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }: {
   videoId: string;
   videoEvents: VideoEvent[];
@@ -152,7 +249,7 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
 
     return (
       <div className="flex-1 flex items-center justify-center bg-black relative">
-        <YouTubePlayer videoId={youtubeId} isHost={isHost} />
+        <YouTubePlayer videoId={youtubeId} videoEvents={videoEvents} onPlay={onPlay} onPause={onPause} onSeek={onSeek} isHost={isHost} />
         {!isHost && <div className="absolute top-4 right-4 bg-primary/80 text-white px-3 py-1.5 rounded-full text-xs font-medium backdrop-blur-sm pointer-events-none">🔄 Синхронизировано с хостом</div>}
       </div>
     );
@@ -170,7 +267,7 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
     );
   }
 
-  // Fallback для прямых ссылок на файлы (mp4 и т.д.)
+  // Fallback для прямых ссылок на файлы (mp4)
   return (
     <div className="flex-1 flex items-center justify-center bg-black relative">
       <video 

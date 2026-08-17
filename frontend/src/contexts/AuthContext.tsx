@@ -62,17 +62,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await login(email, password);
   };
 
-  // 🔥 ГОСТЕВОЙ ВХОД
-  const loginAsGuest = (nickname: string) => {
-    const guestId = Math.floor(Math.random() * 900000) + 100000;
-    const guestUser: User = {
-      id: guestId,
-      username: nickname,
-      isGuest: true,
-    };
+  // 🔥 ГОСТЕВОЙ ВХОД (теперь с настоящим токеном!)
+  const loginAsGuest = async (nickname: string) => {
+    try {
+      // 1. Запрашиваем у бэкенда настоящий JWT токен для гостя
+      const response = await authApi.post('/auth/guest', null, { 
+        params: { username: nickname } 
+      });
+      
+      const { access_token } = response.data;
 
-    sessionStorage.setItem('cowatch_guest', JSON.stringify(guestUser));
-    setUser(guestUser);
+      // 2. Сохраняем его в localStorage Точно так же, как для обычного пользователя!
+      localStorage.setItem('cowatch_token', access_token);
+      setToken(access_token);
+
+      // 3. Распарсиваем токен, чтобы получить ID
+      const payload = JSON.parse(atob(access_token.split('.')[1]));
+      
+      const guestUser: User = {
+        id: payload.user_id,
+        username: nickname,
+        isGuest: true,
+      };
+
+      localStorage.setItem('cowatch_user', JSON.stringify(guestUser));
+      setUser(guestUser);
+      
+    } catch (error) {
+      console.error("❌ Ошибка гостевого входа:", error);
+    }
   };
 
   const logout = () => {

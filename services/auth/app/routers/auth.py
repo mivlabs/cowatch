@@ -1,3 +1,7 @@
+import random
+from fastapi import Query
+from app.schemas.user import Token
+from app.core.security import create_access_token
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,3 +49,15 @@ async def login(user_in: UserLogin, db: AsyncSession = Depends(get_db)):
     refresh_token = create_refresh_token(data={"sub": user.email, "user_id": user.id})
     
     return Token(access_token=access_token, refresh_token=refresh_token)
+
+
+@router.post("/guest", response_model=Token)
+async def login_as_guest(username: str = Query(..., min_length=2, max_length=20)):
+    # Генерируем случайный ID для гостя (от 100000 до 999999)
+    guest_id = random.randint(100000, 999999)
+    
+    # Создаем настоящий JWT токен, который бэкенд сможет расшифровать
+    access_token = create_access_token(data={"sub": f"guest_{username}", "user_id": guest_id})
+    
+    return {"access_token": access_token, "token_type": "bearer"}
+

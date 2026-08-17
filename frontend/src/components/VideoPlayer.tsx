@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, memo } from 'react';
+import { useRef, useEffect, useState, memo, useCallback } from 'react';
 import type { VideoEvent, VideoChangedEvent } from '@/hooks/useRoomWebSocket';
 import { VideoPlaceholder } from './VideoPlaceholder';
 
@@ -45,7 +45,6 @@ const YouTubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isH
   const lastTimeRef = useRef(0);
 
   useEffect(() => {
-    // 1. Загружаем скрипт YouTube IFrame API, если его еще нет
     if (!(window as any).YT) {
       const tag = document.createElement('script');
       tag.src = "https://www.youtube.com/iframe_api";
@@ -53,26 +52,18 @@ const YouTubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isH
       firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
     }
 
-    // 2. Инициализируем плеер
     const initPlayer = () => {
       if (containerRef.current) {
         playerRef.current = new (window as any).YT.Player(containerRef.current, {
           videoId: videoId,
-          playerVars: {
-            autoplay: 0,
-            controls: isHost ? 1 : 0, // Контролы только у хоста
-            rel: 0,
-            modestbranding: 1,
-            enablejsapi: 1
-          },
+          playerVars: { autoplay: 0, controls: isHost ? 1 : 0, rel: 0, modestbranding: 1, enablejsapi: 1 },
           events: {
             onReady: () => {
               console.log('✅ [YouTube] IFrame API успешно инициализирован!');
               lastTimeRef.current = 0;
             },
             onStateChange: (event: any) => {
-              if (isSyncingRef.current) return; // Игнорируем, если это реакция на нашу команду
-              // 1 = playing, 2 = paused
+              if (isSyncingRef.current) return; 
               if (event.data === 1 && isHost) {
                 onPlay(playerRef.current.getCurrentTime());
               } else if (event.data === 2 && isHost) {
@@ -91,17 +82,16 @@ const YouTubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isH
     }
 
     return () => {
-      if (playerRef.current) {
-        playerRef.current.destroy();
-      }
+      if (playerRef.current) playerRef.current.destroy();
     };
   }, [videoId, isHost, onPlay, onPause]);
 
-  // 3. 🔥 Детекция перемотки для хоста (аналог onProgress в react-player)
+  // 🔥 Детекция перемотки (1 секунда, безопаснее)
   useEffect(() => {
     if (!isHost || !playerRef.current) return;
     const interval = setInterval(() => {
-      if (isSyncingRef.current) return;
+      if (isSyncingRef.current) return; // 🔥 ИГНОРИРУЕМ, ЕСЛИ МЫ САМИ СДЕЛАЛИ SEEK
+      
       const currentTime = playerRef.current.getCurrentTime();
       const diff = Math.abs(currentTime - lastTimeRef.current);
       
@@ -110,11 +100,12 @@ const YouTubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isH
         onSeek(currentTime);
       }
       lastTimeRef.current = currentTime;
-    }, 500); // Проверяем каждые 0.5 сек
+    }, 1000);
+    
     return () => clearInterval(interval);
   }, [isHost, onSeek]);
 
-  // 4. 🔥 Реакция на события WebSocket (синхронизация для всех)
+  // 🔥 Реакция на события WebSocket
   useEffect(() => {
     if (videoEvents.length === 0 || !playerRef.current) return;
     const latest = videoEvents[videoEvents.length - 1];
@@ -124,8 +115,9 @@ const YouTubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isH
     if (lastProcessedEventId.current === eventId) return;
     lastProcessedEventId.current = eventId;
 
+    // 🔥 БЛОКИРУЕМ ИНТЕРВАЛ НА 2 СЕКУНДЫ
     isSyncingRef.current = true;
-    setTimeout(() => { isSyncingRef.current = false; }, 1500);
+    setTimeout(() => { isSyncingRef.current = false; }, 2000);
 
     if (latest.type === 'video_play') {
       playerRef.current.seekTo(latest.position, true);
@@ -142,7 +134,7 @@ const YouTubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isH
 });
 YouTubePlayer.displayName = 'YouTubePlayer';
 
-// ─── Rutube Player (Оставляем без изменений, он идеален) ───────────────────
+// ─── Rutube Player ───────────────────
 const RutubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }: {
   videoId: string;
   videoEvents: VideoEvent[];
@@ -237,8 +229,6 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
   const cleanUrl = url ? url.trim() : '';
   const videoType = cleanUrl ? getVideoType(cleanUrl) : 'file';
 
-  console.log('🎥 [VideoPlayer] Рендер. URL:', cleanUrl, 'Type:', videoType, 'isHost:', isHost);
-
   if (!cleanUrl) {
     return <div className="flex-1 flex items-center justify-center bg-black"><VideoPlaceholder isHost={isHost} /></div>;
   }
@@ -267,16 +257,9 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
     );
   }
 
-  // Fallback для прямых ссылок на файлы (mp4)
   return (
     <div className="flex-1 flex items-center justify-center bg-black relative">
-      <video 
-        src={cleanUrl} 
-        controls={isHost} 
-        className="w-full h-full"
-        onPlay={() => isHost && onPlay(0)}
-        onPause={() => isHost && onPause(0)}
-      />
+      <video src={cleanUrl} controls={isHost} className="w-full h-full" onPlay={() => isHost && onPlay(0)} onPause={() => isHost && onPause(0)} />
       {!isHost && <div className="absolute top-4 right-4 bg-primary/80 text-white px-3 py-1.5 rounded-full text-xs font-medium backdrop-blur-sm pointer-events-none">🔄 Синхронизировано с хостом</div>}
     </div>
   );

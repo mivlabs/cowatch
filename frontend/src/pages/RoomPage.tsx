@@ -2,7 +2,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Users, MessageSquare, Send, Copy, Wifi, WifiOff } from 'lucide-react';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react'; 
+
 
 import { api } from '@/lib/api';
 import type { Room } from '@/types/room';
@@ -126,9 +127,17 @@ export function RoomPage() {
     if (code) navigator.clipboard.writeText(code);
   };
 
-  const handleVideoPlay = (position: number) => sendVideoEvent('video_play', position);
-  const handleVideoPause = (position: number) => sendVideoEvent('video_pause', position);
-  const handleVideoSeek = (position: number) => sendVideoEvent('video_seek', position);
+  const handleVideoPlay = useCallback((position: number) => {
+    sendVideoEvent('video_play', position);
+  }, [sendVideoEvent]);
+
+  const handleVideoPause = useCallback((position: number) => {
+    sendVideoEvent('video_pause', position);
+  }, [sendVideoEvent]);
+
+  const handleVideoSeek = useCallback((position: number) => {
+    sendVideoEvent('video_seek', position);
+  }, [sendVideoEvent]);
 
   if (isLoading) {
     return (

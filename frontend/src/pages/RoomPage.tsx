@@ -50,28 +50,21 @@ export function RoomPage() {
     enabled: !!code,
   });
 
-  // 🔥 ИСПРАВЛЕНИЕ 1: Пуленепробиваемая защита от бесконечного цикла реакций + ДЕБАГ
+  // 🔥 ИСПРАВЛЕНИЕ: Вызываем setActiveReactions ТОЛЬКО если есть новые реакции
   useEffect(() => {
     const newReactions = messages.filter((msg): msg is VideoReaction => msg.type === 'video_reaction');
-    if (newReactions.length > 0) {
-      setActiveReactions(prev => {
-        const existingIds = new Set(prev.map(r => `${r.user_id}-${r.timestamp}`));
-        const uniqueNewReactions = newReactions.filter(
-          r => !existingIds.has(`${r.user_id}-${r.timestamp}`)
-        );
+    if (newReactions.length === 0) return; // <-- РАННИЙ ВЫХОД, если реакций нет!
 
-        // 🔥 КЛЮЧЕВОЙ МОМЕНТ: Если новых уникальных реакций нет, возвращаем старый стейт.
-        // Это ПРЕДОТВРАЩАЕТ ре-рендер и разрывает бесконечный цикл!
-        if (uniqueNewReactions.length === 0) {
-          console.log('⏸️ [RoomPage] Реакции не изменились, отмена рендера.');
-          return prev;
-        }
+    const existingIds = new Set(activeReactions.map(r => `${r.user_id}-${r.timestamp}`));
+    const uniqueNewReactions = newReactions.filter(
+      r => !existingIds.has(`${r.user_id}-${r.timestamp}`)
+    );
 
-        console.log('✅ [RoomPage] Добавлены новые реакции:', uniqueNewReactions.length);
-        return [...prev, ...uniqueNewReactions];
-      });
+    if (uniqueNewReactions.length > 0) {
+      setActiveReactions(prev => [...prev, ...uniqueNewReactions]);
     }
-  }, [messages]);
+    // Если uniqueNewReactions.length === 0, ничего не делаем и НЕ вызываем setState!
+  }, [messages, activeReactions]); // <-- Добавили activeReactions в зависимости для корректной работы Set
 
   // 🔥 ИСПРАВЛЕНИЕ 2: Безопасная очистка реакций
   useEffect(() => {

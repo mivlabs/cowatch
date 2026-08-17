@@ -20,17 +20,31 @@ export function JoinModal({ isOpen, onClose, roomCode }: JoinModalProps) {
   const navigate = useNavigate();
   const { login, loginAsGuest } = useAuth();
 
-  const handleGuestLogin = () => {
+  const handleGuestLogin = async () => {
     if (nickname.trim().length < 2) {
       setError('Ник должен быть минимум 2 символа');
       return;
     }
-    loginAsGuest(nickname.trim());
-    onClose();
-    if (roomCode) {
-      navigate(`/room/${roomCode}`);
-    } else {
-      navigate('/create');
+    
+    setLoading(true); // Блокируем кнопку, чтобы не нажали дважды
+    setError('');
+
+    try {
+      // 🔥 ЖДЁМ, пока токен реально сохранится в localStorage!
+      await loginAsGuest(nickname.trim());
+      
+      // И только ПОСЛЕ этого закрываем модалку и переходим дальше
+      onClose();
+      if (roomCode) {
+        navigate(`/room/${roomCode}`);
+      } else {
+        navigate('/create');
+      }
+    } catch (err: any) {
+      console.error('Ошибка гостевого входа:', err);
+      setError('Не удалось войти как гость. Попробуй ещё раз.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -167,9 +181,10 @@ export function JoinModal({ isOpen, onClose, roomCode }: JoinModalProps) {
 
                   <button
                     onClick={handleGuestLogin}
-                    className="w-full py-3 bg-primary text-primary-foreground rounded-xl font-semibold hover:bg-primary/90 transition-colors"
+                    disabled={loading} // 🔥 Блокируем кнопку во время загрузки
+                    className="w-full py-3 bg-primary text-primary-foreground rounded-xl font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                   >
-                    Войти как {nickname || 'гость'} 🎭
+                    {loading ? 'Входим...' : `Войти как ${nickname || 'гость'} 🎭`}
                   </button>
 
                   <button

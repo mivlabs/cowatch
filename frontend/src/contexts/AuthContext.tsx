@@ -26,60 +26,68 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
 
-  // 🔥 Гидратация состояния при загрузке приложения
   useEffect(() => {
+    console.log('🔄 [Auth] Инициализация: проверяем localStorage...');
     const savedToken = localStorage.getItem('cowatch_token');
     const savedUser = localStorage.getItem('cowatch_user');
 
-    // Unified storage: и гости, и обычные пользователи теперь хранятся здесь
     if (savedToken && savedUser) {
-      try {
-        setToken(savedToken);
-        setUser(JSON.parse(savedUser));
-      } catch (error) {
-        console.error('Failed to parse user data from localStorage', error);
-        logout(); // Сброс при поврежденных данных
-      }
+      console.log('✅ [Auth] Токен и пользователь найдены в localStorage');
+      setToken(savedToken);
+      setUser(JSON.parse(savedUser));
+    } else {
+      console.log('⚠️ [Auth] localStorage пуст');
     }
     setIsInitialized(true);
   }, []);
 
   const login = async (email: string, password: string) => {
-    const response = await authApi.post('/auth/login', { email, password });
-    const { access_token } = response.data;
+    console.log('1️⃣ [Login] Начинаем вход...');
+    try {
+      const response = await authApi.post('/auth/login', { email, password });
+      console.log('2️⃣ [Login] Ответ от сервера:', response.data);
+      
+      const { access_token } = response.data;
+      console.log('3️⃣ [Login] Сохраняем токен в localStorage...');
+      
+      localStorage.setItem('cowatch_token', access_token);
+      setToken(access_token);
 
-    localStorage.setItem('cowatch_token', access_token);
-    setToken(access_token);
+      const payload = JSON.parse(atob(access_token.split('.')[1]));
+      const userData: User = {
+        id: payload.user_id,
+        email: payload.sub,
+        username: payload.sub.split('@')[0],
+        isGuest: false,
+      };
 
-    // Безопасное декодирование JWT payload на клиенте (без проверки подписи)
-    const payload = JSON.parse(atob(access_token.split('.')[1]));
-    const userData: User = {
-      id: payload.user_id,
-      email: payload.sub,
-      username: payload.sub.split('@')[0],
-      isGuest: false,
-    };
-
-    localStorage.setItem('cowatch_user', JSON.stringify(userData));
-    setUser(userData);
+      localStorage.setItem('cowatch_user', JSON.stringify(userData));
+      setUser(userData);
+      console.log('4️⃣ [Login] Успешно! Токен сохранен.');
+    } catch (error) {
+      console.error('❌ [Login] ОШИБКА:', error);
+      throw error;
+    }
   };
 
   const register = async (email: string, password: string, username: string) => {
+    console.log('1️⃣ [Register] Начинаем регистрацию...');
     await authApi.post('/auth/register', { email, password, username });
-    // После успешной регистрации сразу выполняем вход
     await login(email, password);
   };
 
-  // 🔥 Гостевой вход с генерацией полноценного JWT на бэкенде
   const loginAsGuest = async (nickname: string) => {
+    console.log('🟢 1. [Guest] Нажата кнопка входа как гость, ник:', nickname);
     try {
-      // Передаем nickname как query parameter, так как это POST запрос без body
+      console.log('🟢 2. [Guest] Отправляем запрос на /auth/guest...');
       const response = await authApi.post('/auth/guest', null, { 
         params: { username: nickname } 
       });
       
+      console.log('🟢 3. [Guest] Ответ от сервера получен:', response.data);
       const { access_token } = response.data;
 
+      console.log('🟢 4. [Guest] Сохраняем токен в localStorage...');
       localStorage.setItem('cowatch_token', access_token);
       setToken(access_token);
 
@@ -94,9 +102,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('cowatch_user', JSON.stringify(guestUser));
       setUser(guestUser);
       
+      console.log('🟢 5. [Guest] УСПЕХ! Проверь Local Storage, токен должен быть там.');
+      
     } catch (error) {
-      console.error("❌ Ошибка гостевого входа:", error);
-      throw error; // Пробрасываем ошибку выше, чтобы UI мог показать уведомление
+      console.error('🔴 6. [Guest] КРИТИЧЕСКАЯ ОШИБКА:', error);
+      throw error;
     }
   };
 
@@ -107,9 +117,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
-  // Блокируем рендер детей до завершения гидратации, чтобы избежать ложных редиректов
   if (!isInitialized) {
-    return <div className="flex items-center justify-center min-h-screen">Загрузка...</div>;
+    return <div className="flex items-center justify-center min-h-screen">Загрузка авторизации...</div>;
   }
 
   return (

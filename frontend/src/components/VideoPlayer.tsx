@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, memo } from 'react';
 import ReactPlayer from 'react-player';
 import type { VideoEvent, VideoChangedEvent } from '@/hooks/useRoomWebSocket';
 import { VideoPlaceholder } from './VideoPlaceholder';
@@ -26,21 +26,23 @@ function extractRutubeId(url: string): string | null {
   return match ? match[1] : null;
 }
 
-// ─── Rutube Player с ЗАЩИТОЙ от бесконечного цикла ───────────────────
-function RutubePlayer({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }: {
+// ─── Rutube Player с защитой от циклов ───────────────────
+const RutubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }: {
   videoId: string;
   videoEvents: VideoEvent[];
   onPlay: (position: number) => void;
   onPause: (position: number) => void;
   onSeek: (position: number) => void;
   isHost: boolean;
-}) {
+}) => {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const currentTimeRef = useRef(0);
   const lastTimeRef = useRef(0);
   const isSyncingRef = useRef(false);
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const lastEventRef = useRef('');
+  
+  // Храним ID последнего обработанного события
+  const lastProcessedEventId = useRef<string | null>(null);
 
   const onPlayRef = useRef(onPlay);
   onPlayRef.current = onPlay;
@@ -49,13 +51,10 @@ function RutubePlayer({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }:
   const onSeekRef = useRef(onSeek);
   onSeekRef.current = onSeek;
 
-  // 🔥 Функция для безопасной установки таймера синхронизации
-  const blockSync = (ms = 2000) => {
+  const blockSync = (ms = 2500) => {
     isSyncingRef.current = true;
     if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
-    syncTimeoutRef.current = setTimeout(() => {
-      isSyncingRef.current = false;
-    }, ms);
+    syncTimeoutRef.current = setTimeout(() => { isSyncingRef.current = false; }, ms);
   };
 
   useEffect(() => {
@@ -65,7 +64,7 @@ function RutubePlayer({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }:
         
         if (data.type === 'player:changeState') {
           const state = data.data?.state;
-          if (isSyncingRef.current) return; // 🔥 Игнорируем, если мы сами инициировали действие
+          if (isSyncingRef.current) return;
 
           if (state === 'playing') onPlayRef.current(currentTimeRef.current);
           else if (state === 'paused' || state === 'pause') onPauseRef.current(currentTimeRef.current);
@@ -74,7 +73,6 @@ function RutubePlayer({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }:
         if (data.type === 'player:currentTime') {
           const newTime = data.data?.time || 0;
           
-          // 🔥 Если мы в режиме синхронизации, просто обновляем время и ВЫХОДИМ, не вызывая onSeek!
           if (isSyncingRef.current) {
             lastTimeRef.current = newTime;
             currentTimeRef.current = newTime;
@@ -84,11 +82,8 @@ function RutubePlayer({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }:
           const diff = Math.abs(newTime - lastTimeRef.current);
           
           if (lastTimeRef.current > 0 && diff > 1.5 && isHost) {
-            console.log('🔀 Rutube: Хост перемотал на', newTime.toFixed(2), 'diff:', diff.toFixed(2));
-            
-            // 🔥 КРИТИЧЕСКИ ВАЖНО: Блокируем обратную связь НЕМЕДЛЕННО, чтобы iframe не вызвал новый цикл
-            blockSync(2500); // 2.5 секунды тишины после перемотки
-            
+            console.log('🔀 Rutube: Хост перемотал на', newTime.toFixed(2));
+            blockSync(3000); // Увеличили блокировку до 3 секунд
             onSeekRef.current(newTime);
           }
           
@@ -96,7 +91,7 @@ function RutubePlayer({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }:
           currentTimeRef.current = newTime;
         }
       } catch {
-        // Игнорируем не-JSON сообщения
+        // Игнорируем не-JSON
       }
     };
 
@@ -107,22 +102,24 @@ function RutubePlayer({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }:
     };
   }, [isHost]);
 
+  //  ЭФФЕКТ, ЗАВИСЯЩИЙ ТОЛЬКО ОТ ПОСЛЕДНЕГО СОБЫТИЯ, А НЕ ОТ МАССИВА
   useEffect(() => {
     if (videoEvents.length === 0) return;
-    const latest = videoEvents[videoEvents.length - 1];
     
-    // Игнорируем смену видео здесь, это обрабатывается через key
-    if (latest.type === 'video_changed') return;
+    const latest = videoEvents[videoEvents.length - 1];
+    if (latest.type === 'video_changed') return; // Игнорируем смену видео здесь
 
     const eventId = `${latest.type}-${latest.timestamp}`;
-    if (eventId === lastEventRef.current) return; // Уже обработали это событие
     
-    lastEventRef.current = eventId; // Запоминаем ТОЛЬКО после проверки
+    // Если мы уже обработали это событие, мы просто выходим.
+    // Даже если родитель передал новый массив, ID события тот же -> цикл прерван.
+    if (lastProcessedEventId.current === eventId) return;
+    
+    lastProcessedEventId.current = eventId; // Запоминаем НАВСЕГДА
 
     const iframe = iframeRef.current;
     if (!iframe?.contentWindow) return;
 
-    // 🔥 Блокируем входящие сообщения от iframe на 2 секунды после нашей команды
     blockSync(2000);
 
     if (latest.type === 'video_play') {
@@ -135,11 +132,11 @@ function RutubePlayer({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }:
         '*'
       );
     }
-  }, [videoEvents]);
+  }, [videoEvents]); // Зависимость осталась, но внутри стоит железная защита по ID
 
   return (
     <iframe
-      key={videoId} // Пересоздаем iframe при смене видео
+      key={videoId}
       ref={iframeRef}
       src={`https://rutube.ru/play/embed/${videoId}`}
       className="w-full h-full"
@@ -149,17 +146,19 @@ function RutubePlayer({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }:
       title="Rutube Video"
     />
   );
-}
+});
+
+RutubePlayer.displayName = 'RutubePlayer';
 
 // ─── Основной компонент VideoPlayer ────────────────────────
 export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek }: VideoPlayerProps) {
   const playerRef = useRef<ReactPlayer>(null);
   const [playing, setPlaying] = useState(false);
-  const lastEventRef = useRef('');
   const lastTimeRef = useRef(0);
   
-  console.log('🎥 VideoPlayer получил URL:', url);
-  
+  // Храним ID последнего обработанного события для обычного плеера
+  const lastProcessedEventId = useRef<string | null>(null);
+
   if (!url || url.trim() === '') {
     return (
       <div className="flex-1 flex items-center justify-center bg-black">
@@ -170,7 +169,7 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
 
   const videoType = getVideoType(url);
 
-  // 🔥 ЭФФЕКТ: Реакция только на Play/Pause/Seek (ИГНОРИРУЕМ video_changed)
+  //  ЭФФЕКТ С ЖЕЛЕЗНОЙ ЗАЩИТОЙ ПО ID
   useEffect(() => {
     if (videoType === 'rutube') return;
     if (videoEvents.length === 0) return;
@@ -179,8 +178,10 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
     if (latest.type === 'video_changed') return;
 
     const eventId = `${latest.type}-${latest.timestamp}`;
-    if (eventId === lastEventRef.current) return;
-    lastEventRef.current = eventId;
+    
+    //  Если событие уже обработано, игнорируем перерисовку массива
+    if (lastProcessedEventId.current === eventId) return;
+    lastProcessedEventId.current = eventId;
 
     if (latest.type === 'video_play') {
       setPlaying(true);
@@ -249,7 +250,7 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
   return (
     <div className="flex-1 flex items-center justify-center bg-black relative">
       <ReactPlayer
-        key={url} // Магия React: пересоздание плеера при смене URL
+        key={url}
         ref={playerRef}
         url={url}
         playing={playing}

@@ -24,6 +24,7 @@ function extractRutubeId(url: string): string | null {
   return match ? match[1] : null;
 }
 
+// ─── Rutube Player (оставляем как есть, он работает) ───────────────────
 const RutubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isHost }: {
   videoId: string;
   videoEvents: VideoEvent[];
@@ -62,7 +63,6 @@ const RutubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isHo
         if (data.type === 'player:changeState') {
           const state = data.data?.state;
           if (isSyncingRef.current || isInitialLoadRef.current) return;
-          // 🔥 ИСПРАВЛЕНИЕ CURSOR: Только хост может триггерить onPlay/onPause из iframe
           if (state === 'playing' && isHost) onPlayRef.current(currentTimeRef.current);
           else if ((state === 'paused' || state === 'pause') && isHost) onPauseRef.current(currentTimeRef.current);
         }
@@ -114,25 +114,21 @@ const RutubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isHo
 });
 RutubePlayer.displayName = 'RutubePlayer';
 
+// ─── Основной компонент VideoPlayer ────────────────────────
 export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek }: VideoPlayerProps) {
   const playerRef = useRef<ReactPlayer>(null);
   const [playing, setPlaying] = useState(false);
   const lastTimeRef = useRef(0);
   const lastProcessedEventId = useRef<string | null>(null);
   const isSyncingRef = useRef(false);
-  const isInitialLoadRef = useRef(true);
 
-  // 🔥 ИСПРАВЛЕНИЕ CURSOR: Вычисляем тип ДО хуков и early return
-  const videoType = url ? getVideoType(url) : 'file';
+  const cleanUrl = url ? url.trim() : '';
+  const videoType = cleanUrl ? getVideoType(cleanUrl) : 'file';
+
+  console.log('🎥 [VideoPlayer] Рендер. URL:', cleanUrl, 'Type:', videoType, 'isHost:', isHost);
 
   useEffect(() => {
-    const timer = setTimeout(() => { isInitialLoadRef.current = false; }, 3000);
-    return () => clearTimeout(timer);
-  }, [url]);
-
-  // 🔥 ИСПРАВЛЕНИЕ CURSOR: Хук строго ВЫШЕ early return!
-  useEffect(() => {
-    if (!url || videoType === 'rutube') return;
+    if (!cleanUrl || videoType === 'rutube') return;
     if (videoEvents.length === 0) return;
 
     const latest = videoEvents[videoEvents.length - 1];
@@ -168,10 +164,9 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
       safeSeekTo(latest.position);
       setTimeout(() => { isSyncingRef.current = false; }, 1500);
     }
-  }, [videoEvents, videoType, url]);
+  }, [videoEvents, videoType, cleanUrl]);
 
-  // Early return теперь БЕЗОПАСЕН, так как все хуки уже объявлены
-  if (!url || url.trim() === '') {
+  if (!cleanUrl) {
     return <div className="flex-1 flex items-center justify-center bg-black"><VideoPlaceholder isHost={isHost} /></div>;
   }
 
@@ -185,19 +180,19 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
   };
 
   const handlePlay = () => {
-    if (isSyncingRef.current || isInitialLoadRef.current) return; 
+    if (isSyncingRef.current) return; 
     setPlaying(true);
     if (isHost) onPlay(safeGetCurrentTime());
   };
 
   const handlePause = () => {
-    if (isSyncingRef.current || isInitialLoadRef.current) return; 
+    if (isSyncingRef.current) return; 
     setPlaying(false);
     if (isHost) onPause(safeGetCurrentTime());
   };
 
   const handleProgress = (state: { playedSeconds: number }) => {
-    if (!isHost || isInitialLoadRef.current) return;
+    if (!isHost) return;
     if (isSyncingRef.current) {
       lastTimeRef.current = state.playedSeconds;
       return;
@@ -211,7 +206,7 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
   };
 
   if (videoType === 'rutube') {
-    const rutubeId = extractRutubeId(url);
+    const rutubeId = extractRutubeId(cleanUrl);
     if (!rutubeId) return <div className="flex-1 flex items-center justify-center bg-black text-white"><p>Неверная ссылка на Rutube</p></div>;
 
     return (
@@ -222,12 +217,13 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
     );
   }
 
+  // 🔥 YouTube/Vimeo - БЕЗ isInitialLoadRef, без блокировок
   return (
     <div className="flex-1 flex items-center justify-center bg-black relative">
       <ReactPlayer
-        key={url}
+        key={cleanUrl}
         ref={playerRef}
-        url={url}
+        url={cleanUrl}
         playing={playing}
         controls={isHost}
         onPlay={handlePlay}
@@ -236,7 +232,17 @@ export function VideoPlayer({ url, isHost, videoEvents, onPlay, onPause, onSeek 
         progressInterval={200}
         width="100%"
         height="100%"
-        config={{ youtube: { playerVars: { modestbranding: 1, rel: 0 } } }}
+        onReady={() => console.log('✅ [YouTube] Плеер готов!')}
+        onError={(e) => console.error('❌ [YouTube] Ошибка:', e)}
+        config={{ 
+          youtube: { 
+            playerVars: { 
+              modestbranding: 1, 
+              rel: 0,
+              autoplay: 0 // 🔥 ЯВНО ОТКЛЮЧАЕМ АВТОВОСПРОИЗВЕДЕНИЕ
+            } 
+          }
+        }}
       />
       {!isHost && <div className="absolute top-4 right-4 bg-primary/80 text-white px-3 py-1.5 rounded-full text-xs font-medium backdrop-blur-sm pointer-events-none">🔄 Синхронизировано с хостом</div>}
     </div>

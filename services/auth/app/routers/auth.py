@@ -1,8 +1,6 @@
 import random
-from fastapi import Query
-from app.schemas.user import Token
-from app.core.security import create_access_token
-from fastapi import APIRouter, Depends, HTTPException, status
+import logging
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -15,10 +13,17 @@ from app.services.auth import (
     create_refresh_token,
 )
 
+# Инициализация логгера для отслеживания событий безопасности (Middle+ практика)
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
+    """
+    Регистрирует нового пользователя.
+    Проверяет уникальность email перед созданием записи в БД.
+    """
     existing_user = await get_user_by_email(db, user_in.email)
     if existing_user:
         raise HTTPException(
@@ -27,12 +32,17 @@ async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
         )
     
     new_user = await create_user(db, user_in)
+    logger.info(f"User registered successfully: {new_user.email}")
     return new_user
 
 @router.post("/login", response_model=Token)
 async def login(user_in: UserLogin, db: AsyncSession = Depends(get_db)):
+    """
+    Аутентифицирует пользователя и возвращает пару JWT токенов (access + refresh).
+    """
     user = await get_user_by_email(db, user_in.email)
     if not user or not verify_password(user_in.password, user.hashed_password):
+        # Возвращаем общую ошибку, чтобы не раскрывать, существует ли email (Security Best Practice)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -50,14 +60,17 @@ async def login(user_in: UserLogin, db: AsyncSession = Depends(get_db)):
     
     return Token(access_token=access_token, refresh_token=refresh_token)
 
-
 @router.post("/guest", response_model=Token)
 async def login_as_guest(username: str = Query(..., min_length=2, max_length=20)):
-    # Генерируем случайный ID для гостя (от 100000 до 999999)
+    """
+    Генерирует валидный JWT токен для гостевого пользователя.
+    Это позволяет гостям проходить через те же middleware авторизации, 
+    что и зарегистрированные пользователи, упрощая логику бэкенда.
+    """
     guest_id = random.randint(100000, 999999)
     
-    # Создаем настоящий JWT токен, который бэкенд сможет расшифровать
     access_token = create_access_token(data={"sub": f"guest_{username}", "user_id": guest_id})
     
-    return {"access_token": access_token, "token_type": "bearer"}
-
+    # Возвращаем объект Token, чтобы удовлетворить требования Pydantic схемы.
+    # Refresh token для гостя не нужен, передаем пустую строку или фиктивное значение.
+    return Token(access_token=access_token, refresh_token="guest_session")

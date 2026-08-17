@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { authApi } from '@/lib/api';
 
-interface User {
+export interface User {
   id: number;
   email?: string;
   username: string;
@@ -13,7 +13,7 @@ interface AuthContextType {
   token: string | null;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, username: string) => Promise<void>;
-  loginAsGuest: (nickname: string) => void;
+  loginAsGuest: (nickname: string) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
   isGuest: boolean;
@@ -24,18 +24,24 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
+  const [isInitialized, setIsInitialized] = useState(false);
 
+  // 🔥 Гидратация состояния при загрузке приложения
   useEffect(() => {
     const savedToken = localStorage.getItem('cowatch_token');
     const savedUser = localStorage.getItem('cowatch_user');
-    const guestUser = sessionStorage.getItem('cowatch_guest');
 
+    // Unified storage: и гости, и обычные пользователи теперь хранятся здесь
     if (savedToken && savedUser) {
-      setToken(savedToken);
-      setUser(JSON.parse(savedUser));
-    } else if (guestUser) {
-      setUser(JSON.parse(guestUser));
+      try {
+        setToken(savedToken);
+        setUser(JSON.parse(savedUser));
+      } catch (error) {
+        console.error('Failed to parse user data from localStorage', error);
+        logout(); // Сброс при поврежденных данных
+      }
     }
+    setIsInitialized(true);
   }, []);
 
   const login = async (email: string, password: string) => {
@@ -45,6 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('cowatch_token', access_token);
     setToken(access_token);
 
+    // Безопасное декодирование JWT payload на клиенте (без проверки подписи)
     const payload = JSON.parse(atob(access_token.split('.')[1]));
     const userData: User = {
       id: payload.user_id,
@@ -59,24 +66,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = async (email: string, password: string, username: string) => {
     await authApi.post('/auth/register', { email, password, username });
+    // После успешной регистрации сразу выполняем вход
     await login(email, password);
   };
 
-  // 🔥 ГОСТЕВОЙ ВХОД (теперь с настоящим токеном!)
+  // 🔥 Гостевой вход с генерацией полноценного JWT на бэкенде
   const loginAsGuest = async (nickname: string) => {
     try {
-      // 1. Запрашиваем у бэкенда настоящий JWT токен для гостя
+      // Передаем nickname как query parameter, так как это POST запрос без body
       const response = await authApi.post('/auth/guest', null, { 
         params: { username: nickname } 
       });
       
       const { access_token } = response.data;
 
-      // 2. Сохраняем его в localStorage Точно так же, как для обычного пользователя!
       localStorage.setItem('cowatch_token', access_token);
       setToken(access_token);
 
-      // 3. Распарсиваем токен, чтобы получить ID
       const payload = JSON.parse(atob(access_token.split('.')[1]));
       
       const guestUser: User = {
@@ -90,16 +96,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
     } catch (error) {
       console.error("❌ Ошибка гостевого входа:", error);
+      throw error; // Пробрасываем ошибку выше, чтобы UI мог показать уведомление
     }
   };
 
   const logout = () => {
     localStorage.removeItem('cowatch_token');
     localStorage.removeItem('cowatch_user');
-    sessionStorage.removeItem('cowatch_guest');
     setToken(null);
     setUser(null);
   };
+
+  // Блокируем рендер детей до завершения гидратации, чтобы избежать ложных редиректов
+  if (!isInitialized) {
+    return <div className="flex items-center justify-center min-h-screen">Загрузка...</div>;
+  }
 
   return (
     <AuthContext.Provider

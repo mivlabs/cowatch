@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query'; // 🔥 ДОБАВИЛИ useQueryClient
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Users, MessageSquare, Send, Copy, Wifi, WifiOff } from 'lucide-react';
 import { useState, useRef, useEffect, useMemo } from 'react';
@@ -21,10 +21,12 @@ export function RoomPage() {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
+  const queryClient = useQueryClient(); // 🔥 Инициализируем клиент для обновления кэша
   
   const [chatInput, setChatInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [activeReactions, setActiveReactions] = useState<VideoReaction[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false); // 🔥 Защита от двойного клика
 
   // 🔥 1. Редирект, если не авторизован
   useEffect(() => {
@@ -50,8 +52,7 @@ export function RoomPage() {
     enabled: !!code,
   });
 
-  // 🔥 4. Логика реакций
-  // Слушаем новые реакции из WebSocket
+  // 🔥 4. Логика реакций (ИСПРАВЛЕННАЯ: без бесконечного цикла)
   useEffect(() => {
     const newReactions = messages.filter((msg): msg is VideoReaction => msg.type === 'video_reaction');
     if (newReactions.length > 0) {
@@ -59,25 +60,24 @@ export function RoomPage() {
     }
   }, [messages]);
 
-  // Очищаем старые реакции каждые 3 секунды
+  // 🔥 ИСПРАВЛЕНИЕ: Запускаем очистку ОДИН РАЗ при монтировании компонента.
+  // Пустой массив зависимостей [] предотвращает бесконечный цикл!
   useEffect(() => {
-    const timer = setTimeout(() => {
+    const interval = setInterval(() => {
       const now = Date.now();
       setActiveReactions(prev => 
         prev.filter(r => now - new Date(r.timestamp).getTime() < 3000)
       );
-    }, 3000);
-    return () => clearTimeout(timer);
-  }, [activeReactions]);
+    }, 1000); // Проверяем каждую секунду
+    
+    return () => clearInterval(interval);
+  }, []); // <-- ВАЖНО: пустой массив!
 
   // Отправка реакции
   const handleReaction = (emoji: string) => {
     if (!user) return;
-    
-    // Отправляем на сервер
     sendReaction(emoji);
     
-    // Мгновенно показываем у себя (оптимистичный UI)
     const reaction: VideoReaction = {
       type: 'video_reaction',
       emoji,
@@ -189,16 +189,29 @@ export function RoomPage() {
         <form 
           onSubmit={async (e) => {
             e.preventDefault();
+            if (isSubmitting) return; // 🔥 Защита от двойного клика
+            
+            setIsSubmitting(true);
             const formData = new FormData(e.currentTarget);
             const url = formData.get('videoUrl') as string;
-            if (!url.trim()) return;
+            
+            if (!url.trim()) {
+              setIsSubmitting(false);
+              return;
+            }
             
             try {
               await api.patch(`/rooms/${code}/video`, { url: url.trim() });
+              
+              // 🔥 МАГИЯ: Говорим React Query, что данные комнаты устарели и их нужно обновить!
+              queryClient.invalidateQueries({ queryKey: ['room', code] });
+              
               (e.target as HTMLFormElement).reset();
             } catch (err) {
               console.error('Ошибка обновления видео:', err);
               alert('Не удалось обновить видео');
+            } finally {
+              setIsSubmitting(false);
             }
           }}
           className="border-b border-white/10 p-3 bg-muted/20 flex gap-2 items-center"
@@ -212,9 +225,10 @@ export function RoomPage() {
           />
           <button 
             type="submit"
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors whitespace-nowrap"
+            disabled={isSubmitting}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors whitespace-nowrap disabled:opacity-50 flex items-center gap-2"
           >
-            Загрузить
+            {isSubmitting ? 'Загрузка...' : 'Загрузить'}
           </button>
         </form>
       )}
@@ -233,7 +247,6 @@ export function RoomPage() {
             onSeek={handleVideoSeek}
           />
           
-          {/* Всплывающие эмодзи поверх видео */}
           <ReactionOverlay reactions={activeReactions} />
 
           {/* Панель реакций */}

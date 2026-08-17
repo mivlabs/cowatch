@@ -1,4 +1,5 @@
 import json
+import os
 import asyncio
 from fastapi import APIRouter, HTTPException, status, WebSocket, WebSocketDisconnect, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,7 +12,8 @@ from app.core.security import get_user_id_from_token
 from app.core.dependencies import get_current_user
 
 router = APIRouter(prefix="/rooms", tags=["Rooms"])
-redis_client = aioredis.from_url("redis://redis:6379/3", decode_responses=True)
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+redis_client = aioredis.from_url(REDIS_URL, decode_responses=True)
 
 
 @router.post("/", response_model=RoomResponse, status_code=status.HTTP_201_CREATED)

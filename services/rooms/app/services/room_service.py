@@ -1,3 +1,4 @@
+import os
 import json
 import redis.asyncio as aioredis
 from uuid import UUID
@@ -8,8 +9,8 @@ from fastapi import HTTPException, status
 from app.models.room import Room, Participant
 from app.schemas.room import RoomCreate
 
-# Redis клиент для Pub/Sub уведомлений
-redis_client = aioredis.from_url("redis://redis:6379/3", decode_responses=True)
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/3")
+redis_client = aioredis.from_url(REDIS_URL, decode_responses=True)
 
 
 async def create_room(db: AsyncSession, room_in: RoomCreate, user_id: int) -> Room:

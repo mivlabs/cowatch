@@ -100,17 +100,32 @@ export function RoomPage() {
     setActiveReactions(prev => [...prev, reaction]);
   };
 
-  const videoEvents = useMemo(() => 
-    messages.filter((msg): msg is VideoEvent | VideoChangedEvent => 
-      msg.type === 'video_play' || 
-      msg.type === 'video_pause' || 
-      msg.type === 'video_seek' ||
-      msg.type === 'video_changed'
-    ), [messages]
-  );
+  const [videoEvents, setVideoEvents] = useState<(VideoEvent | VideoChangedEvent)[]>([]);
 
+  // 🔥 НОВОЕ: Слушаем только новые видео-события и добавляем их в стейт
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messages.length === 0) return;
+    
+    // Берем только последнее сообщение
+    const lastMessage = messages[messages.length - 1];
+    
+    const isVideoEvent = 
+      lastMessage.type === 'video_play' || 
+      lastMessage.type === 'video_pause' || 
+      lastMessage.type === 'video_seek' || 
+      lastMessage.type === 'video_changed';
+
+    if (isVideoEvent) {
+      setVideoEvents((prev) => {
+        // Проверяем, есть ли уже это событие (защита от дубликатов)
+        const exists = prev.some(
+          (e) => e.timestamp === lastMessage.timestamp && e.type === lastMessage.type
+        );
+        if (exists) return prev; // Если есть, не вызываем ре-рендер!
+        
+        return [...prev, lastMessage as VideoEvent | VideoChangedEvent];
+      });
+    }
   }, [messages]);
 
   const handleSend = (e: React.FormEvent) => {

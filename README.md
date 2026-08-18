@@ -104,7 +104,7 @@ flowchart TB
 ### 1. Клонировать репозиторий
 
 ```bash
-git clone https://github.com/your-username/cowatch.git
+git clone https://github.com/mivlabs/cowatch.git
 cd cowatch
 ```
 

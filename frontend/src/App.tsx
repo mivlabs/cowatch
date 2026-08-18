@@ -3,8 +3,10 @@ import { HomePage } from './pages/HomePage';
 import { RoomPage } from './pages/RoomPage';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
-import { CreateRoomPage } from './pages/CreateRoomPage'; // 🔥 Добавь этот импорт
+import { CreateRoomPage } from './pages/CreateRoomPage';
 import { useAuth } from './contexts/AuthContext';
+import { ProfilePage } from '@/pages/ProfilePage';
+
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
@@ -18,6 +20,7 @@ function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/" element={<HomePage />} />
+        <Route path="/profile" element={<ProfilePage />} />
         <Route
           path="/create"
           element={

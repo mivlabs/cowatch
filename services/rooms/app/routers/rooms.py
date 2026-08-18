@@ -11,7 +11,6 @@ from app.services.room_service import create_room, get_room_by_code
 from app.core.security import get_user_id_from_token, get_user_email_from_token
 from app.core.dependencies import get_current_user
 
-# 🔥 ОБЯЗАТЕЛЬНО: Создаем роутер
 router = APIRouter(prefix="/rooms", tags=["Rooms"])
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
@@ -135,7 +134,6 @@ async def room_websocket(websocket: WebSocket, code: str):
         await websocket.accept()
         print(f"✅ [WS] WebSocket принят для комнаты: {code}")
         
-        # 🔥 УЛУЧШЕННАЯ ЛОГИКА ОПРЕДЕЛЕНИЯ ХОСТА С ОТЛАДКОЙ
         host_key = f"room:host:{code}"
         existing_host = await redis_client.get(host_key)
         

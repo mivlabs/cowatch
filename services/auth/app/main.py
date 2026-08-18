@@ -7,11 +7,9 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.database import engine, Base
 from app.routers import auth
 
-# 🔥 1. Включаем максимальный уровень логирования
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("uvicorn.error")
 
-# 🔥 2. Создаем Middleware, который логирует ВСЁ
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         logger.debug(f"🔥🔥🔥 ЗАПРОС ПОЛУЧЕН: {request.method} {request.url}")
@@ -41,12 +39,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# 🔥 3. Добавляем наш логгер ПЕРВЫМ в цепочку
 app.add_middleware(RequestLoggingMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # В продакшене лучше указать конкретный домен Vercel
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

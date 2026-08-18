@@ -21,10 +21,10 @@ router = APIRouter(tags=["Authentication"])
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
-    
-    # Регистрирует нового пользователя.
-    # Проверяет уникальность email перед созданием записи в БД.
-    
+    """
+    Регистрирует нового пользователя.
+    Проверяет уникальность email перед созданием записи в БД.
+    """
     existing_user = await get_user_by_email(db, user_in.email)
     if existing_user:
         raise HTTPException(
@@ -65,9 +65,9 @@ async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
 
 @router.post("/login", response_model=Token)
 async def login(user_in: UserLogin, db: AsyncSession = Depends(get_db)):
-    
-    # Аутентифицирует пользователя и возвращает пару JWT токенов (access + refresh).
-    
+    """
+    Аутентифицирует пользователя и возвращает пару JWT токенов (access + refresh).
+    """
     user = await get_user_by_email(db, user_in.email)
     if not user or not verify_password(user_in.password, user.hashed_password):
         # Возвращаем общую ошибку, чтобы не раскрывать, существует ли email
@@ -90,9 +90,11 @@ async def login(user_in: UserLogin, db: AsyncSession = Depends(get_db)):
 
 @router.post("/guest", response_model=Token)
 async def login_as_guest(username: str = Query(..., min_length=2, max_length=20)):
-    
-    # Генерирует валидный JWT токен для гостевого пользователя.
-
+    """
+    Генерирует валидный JWT токен для гостевого пользователя.
+    Это позволяет гостям проходить через те же middleware авторизации, 
+    что и зарегистрированные пользователи, упрощая логику бэкенда.
+    """
     guest_id = random.randint(100000, 999999)
     
     access_token = create_access_token(data={"sub": f"guest_{username}", "user_id": guest_id})

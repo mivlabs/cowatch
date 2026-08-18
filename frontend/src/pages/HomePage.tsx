@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Film, Users, Zap, ArrowRight, LogOut } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { JoinModal } from '@/components/JoinModal';
+import { Avatar } from '@/components/Avatar';
 
 export function HomePage() {
   const [roomCode, setRoomCode] = useState('');
@@ -40,12 +41,21 @@ export function HomePage() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden">
       {/* Верхняя панель - на мобильном в потоке, на десктопе абсолютная */}
-      <div className="w-full md:absolute md:top-4 md:right-4 z-20 flex items-center justify-between md:justify-end p-4 md:p-0">
+      <div className="w-full md:absolute md:top-4 md:right-4 z-20 flex items-center justify-between md:justify-end gap-2 md:gap-3 p-4 md:p-0">
         {isAuthenticated ? (
           <>
-            <span className="text-sm text-muted-foreground hidden sm:block">
-              {user?.isGuest ? `🎭 ${user.username}` : user?.email}
-            </span>
+            {/* КНОПКА ПРОФИЛЯ */}
+            <button
+              onClick={() => navigate('/profile')}
+              className="flex items-center gap-2 px-3 py-2 bg-primary/10 hover:bg-primary/20 text-primary rounded-lg transition-colors border border-primary/30"
+              title="Мой профиль"
+            >
+              <Avatar username={user?.username || 'User'} size="sm" />
+              <span className="text-sm font-medium hidden sm:inline">
+                {user?.isGuest ? `🎭 ${user.username}` : user?.username}
+              </span>
+            </button>
+
             <button
               onClick={handleLogout}
               className="flex items-center gap-2 px-4 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors border border-red-500/30"
@@ -152,7 +162,7 @@ export function HomePage() {
         </div>
       </motion.div>
 
-      {/* 🔥 Модальное окно входа */}
+      {/* Модальное окно входа */}
       <JoinModal
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}

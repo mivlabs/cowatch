@@ -13,7 +13,7 @@ from app.services.auth import (
     create_refresh_token,
 )
 
-# Инициализация логгера для отслеживания событий безопасности (Middle+ практика)
+# Инициализация логгера для отслеживания событий безопасности
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Authentication"])
@@ -62,11 +62,6 @@ async def login(user_in: UserLogin, db: AsyncSession = Depends(get_db)):
 
 @router.post("/guest", response_model=Token)
 async def login_as_guest(username: str = Query(..., min_length=2, max_length=20)):
-    """
-    Генерирует валидный JWT токен для гостевого пользователя.
-    Это позволяет гостям проходить через те же middleware авторизации, 
-    что и зарегистрированные пользователи, упрощая логику бэкенда.
-    """
     guest_id = random.randint(100000, 999999)
     
     access_token = create_access_token(data={"sub": f"guest_{username}", "user_id": guest_id})

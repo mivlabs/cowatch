@@ -134,7 +134,6 @@ async def room_websocket(websocket: WebSocket, code: str):
         await websocket.accept()
         print(f"✅ [WS] WebSocket принят для комнаты: {code}")
         
-        # 🔥 УЛУЧШЕННАЯ ЛОГИКА ОПРЕДЕЛЕНИЯ ХОСТА С ОТЛАДКОЙ
         host_key = f"room:host:{code}"
         existing_host = await redis_client.get(host_key)
         

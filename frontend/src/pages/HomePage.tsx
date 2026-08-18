@@ -39,8 +39,8 @@ export function HomePage() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4 relative overflow-hidden">
-      {/* Верхняя панель */}
-      <div className="absolute top-4 right-4 z-20 flex items-center gap-3">
+      {/* Верхняя панель - на мобильном в потоке, на десктопе абсолютная */}
+      <div className="w-full md:absolute md:top-4 md:right-4 z-20 flex items-center justify-between md:justify-end p-4 md:p-0">
         {isAuthenticated ? (
           <>
             <span className="text-sm text-muted-foreground hidden sm:block">
@@ -55,7 +55,7 @@ export function HomePage() {
             </button>
           </>
         ) : (
-          <div className="flex gap-2">
+          <div className="flex gap-2 ml-auto">
             <button
               onClick={() => { setModalRoomCode(undefined); setModalOpen(true); }}
               className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"

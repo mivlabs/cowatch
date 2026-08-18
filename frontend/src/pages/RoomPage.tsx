@@ -4,7 +4,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Users, MessageSquare, Send, Copy, Wifi, WifiOff } from 'lucide-react';
 import { useState, useRef, useEffect, useCallback } from 'react'; 
 
-
 import { api } from '@/lib/api';
 import type { Room } from '@/types/room';
 import { VideoPlayer } from '@/components/VideoPlayer';
@@ -21,7 +20,7 @@ import {
 export function RoomPage() {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, isInitialized } = useAuth();
   const queryClient = useQueryClient();
   
   const [chatInput, setChatInput] = useState('');
@@ -29,14 +28,13 @@ export function RoomPage() {
   const [activeReactions, setActiveReactions] = useState<VideoReaction[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 🔥 ИСПРАВЛЕНИЕ CURSOR: Ref для дедупликации, чтобы не зависеть от activeReactions
   const processedReactionIds = useRef(new Set<string>());
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (isInitialized && !isAuthenticated) {
       navigate('/');
     }
-  }, [isAuthenticated, navigate]);
+  }, [isInitialized, isAuthenticated, navigate]);
 
   const { messages, isConnected, sendChatMessage, sendVideoEvent, sendReaction, isHost } = useRoomWebSocket({
     code: code || '',
@@ -53,7 +51,6 @@ export function RoomPage() {
     enabled: !!code,
   });
 
-  // 🔥 ИСПРАВЛЕНИЕ CURSOR: Зависимость ТОЛЬКО от [messages]. Ref предотвращает дубликаты.
   useEffect(() => {
     const newReactions = messages.filter((msg): msg is VideoReaction => msg.type === 'video_reaction');
 
@@ -69,7 +66,6 @@ export function RoomPage() {
     }
   }, [messages]);
 
-  // Безопасная очистка реакций
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
@@ -166,7 +162,6 @@ export function RoomPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
-      {/* Хедер - компактный на мобильном */}
       <header className="border-b border-white/10 p-3 md:p-4 flex items-center justify-between bg-muted/30 backdrop-blur-md sticky top-0 z-40">
         <div className="flex items-center gap-2 md:gap-4 min-w-0">
           <button onClick={() => navigate('/')} className="p-2 hover:bg-white/10 rounded-lg transition-colors flex-shrink-0">
@@ -201,7 +196,6 @@ export function RoomPage() {
         </div>
       </header>
 
-      {/* Форма смены видео */}
       {isHost && (
         <form 
           onSubmit={async (e) => {
@@ -247,15 +241,11 @@ export function RoomPage() {
         </form>
       )}
 
-      {/* Основной контент - на мобильном видео сверху, чат снизу */}
       <main className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-        
-        {/* Видео - занимает всё доступное пространство */}
         <div className="flex-1 relative bg-black flex flex-col min-h-[240px] md:min-h-[400px] lg:min-h-0">
           <VideoPlayer url={videoUrl} isHost={isHost} videoEvents={videoEvents} onPlay={handleVideoPlay} onPause={handleVideoPause} onSeek={handleVideoSeek} />
           <ReactionOverlay reactions={activeReactions} />
           
-          {/* Реакции - меньше на мобильном */}
           <div className="absolute bottom-3 md:bottom-6 left-1/2 -translate-x-1/2 flex gap-2 md:gap-3 bg-black/60 backdrop-blur-md p-2 md:p-3 rounded-full border border-white/10 z-30">
             {['❤️', '🔥', '😂', '😮', '👏'].map(emoji => (
               <button
@@ -269,7 +259,6 @@ export function RoomPage() {
           </div>
         </div>
 
-        {/* Чат - на мобильном занимает фиксированную высоту снизу */}
         <div className="w-full lg:w-96 lg:border-l border-t lg:border-t-0 border-white/10 bg-muted/20 flex flex-col h-[40vh] lg:h-auto">
           <div className="flex border-b border-white/10 flex-shrink-0">
             <button className="flex-1 py-3 text-sm font-medium text-primary border-b-2 border-primary flex items-center justify-center gap-2">
@@ -330,3 +319,4 @@ export function RoomPage() {
       </main>
     </div>
   );
+} 

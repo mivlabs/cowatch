@@ -86,11 +86,11 @@ const YouTubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isH
     };
   }, [videoId, isHost, onPlay, onPause]);
 
-  // 🔥 Детекция перемотки (1 секунда, безопаснее)
+  // детекция перемотки (1 секунда)
   useEffect(() => {
     if (!isHost || !playerRef.current) return;
     const interval = setInterval(() => {
-      if (isSyncingRef.current) return; // 🔥 ИГНОРИРУЕМ, ЕСЛИ МЫ САМИ СДЕЛАЛИ SEEK
+      if (isSyncingRef.current) return;
       
       const currentTime = playerRef.current.getCurrentTime();
       const diff = Math.abs(currentTime - lastTimeRef.current);
@@ -105,7 +105,6 @@ const YouTubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isH
     return () => clearInterval(interval);
   }, [isHost, onSeek]);
 
-  // 🔥 Реакция на события WebSocket
   useEffect(() => {
     if (videoEvents.length === 0 || !playerRef.current) return;
     const latest = videoEvents[videoEvents.length - 1];
@@ -115,7 +114,6 @@ const YouTubePlayer = memo(({ videoId, videoEvents, onPlay, onPause, onSeek, isH
     if (lastProcessedEventId.current === eventId) return;
     lastProcessedEventId.current = eventId;
 
-    // 🔥 БЛОКИРУЕМ ИНТЕРВАЛ НА 2 СЕКУНДЫ
     isSyncingRef.current = true;
     setTimeout(() => { isSyncingRef.current = false; }, 2000);
 

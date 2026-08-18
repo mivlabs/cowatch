@@ -1,7 +1,8 @@
 import axios from 'axios';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8003';
-const AUTH_URL = import.meta.env.VITE_AUTH_URL || 'http://localhost:8001';
+// 🔥 ЖЕСТКИЙ ХАРДКОД ДЛЯ ТЕСТА (потом заменим на переменные)
+const API_URL = 'https://rooms-production-f3bb.up.railway.app';
+const AUTH_URL = 'https://auth-production-8d2e.up.railway.app';
 
 export const api = axios.create({
   baseURL: API_URL,
@@ -13,31 +14,45 @@ export const authApi = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('cowatch_token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
+// Перехватчик запросов (добавляет токен)
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('cowatch_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
 
-// Перехватчик ошибок для Rooms
+authApi.interceptors.request.use((config) => {
+  const token = localStorage.getItem('cowatch_token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Перехватчик ответов (ловит просроченные токены)
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    console.error('Rooms API Error:', error.response?.data || error.message);
+    if (error.response?.status === 401) {
+      console.warn('⚠️ Токен истек. Автоматический выход...');
+      localStorage.removeItem('cowatch_token');
+      localStorage.removeItem('cowatch_user');
+      window.location.href = '/';
+    }
     return Promise.reject(error);
   }
 );
 
-// Перехватчик ошибок для Auth
 authApi.interceptors.response.use(
   (response) => response,
   (error) => {
-    console.error('Auth API Error:', error.response?.data || error.message);
+    if (error.response?.status === 401) {
+      localStorage.removeItem('cowatch_token');
+      localStorage.removeItem('cowatch_user');
+      window.location.href = '/';
+    }
     return Promise.reject(error);
   }
 );

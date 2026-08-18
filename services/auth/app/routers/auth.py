@@ -20,10 +20,8 @@ router = APIRouter(tags=["Authentication"])
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
-    """
-    Регистрирует нового пользователя.
-    Проверяет уникальность email перед созданием записи в БД.
-    """
+    # Регистрирует нового пользователя.
+    # Проверяет уникальность email перед созданием записи в БД.
     existing_user = await get_user_by_email(db, user_in.email)
     if existing_user:
         raise HTTPException(
@@ -37,12 +35,10 @@ async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
 
 @router.post("/login", response_model=Token)
 async def login(user_in: UserLogin, db: AsyncSession = Depends(get_db)):
-    """
-    Аутентифицирует пользователя и возвращает пару JWT токенов (access + refresh).
-    """
+    # Аутентифицирует пользователя и возвращает пару JWT токенов (access + refresh).
     user = await get_user_by_email(db, user_in.email)
     if not user or not verify_password(user_in.password, user.hashed_password):
-        # Возвращаем общую ошибку, чтобы не раскрывать, существует ли email (Security Best Practice)
+        # Возвращаем общую ошибку, чтобы не раскрывать, существует ли email
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",

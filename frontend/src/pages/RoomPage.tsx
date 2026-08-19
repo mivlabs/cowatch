@@ -2,7 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Users, MessageSquare, Send, Copy, Wifi, WifiOff } from 'lucide-react';
-import { useState, useRef, useEffect, useCallback } from 'react'; 
+import { useState, useRef, useEffect, useCallback } from 'react';
 
 import { api } from '@/lib/api';
 import type { Room } from '@/types/room';
@@ -12,8 +12,6 @@ import { Avatar } from '@/components/Avatar';
 import { useAuth } from '@/contexts/AuthContext';
 import { 
   useRoomWebSocket, 
-  type VideoEvent, 
-  type VideoChangedEvent, 
   type VideoReaction 
 } from '@/hooks/useRoomWebSocket';
 
@@ -36,7 +34,7 @@ export function RoomPage() {
     }
   }, [isInitialized, isAuthenticated, navigate]);
 
-  const { messages, isConnected, sendChatMessage, sendVideoEvent, sendReaction, isHost } = useRoomWebSocket({
+  const { messages, videoEvents, isConnected, sendChatMessage, sendVideoEvent, sendReaction, isHost } = useRoomWebSocket({
     code: code || '',
     userId: user?.id || 1,
     username: user?.username || 'User',
@@ -90,26 +88,6 @@ export function RoomPage() {
     };
     setActiveReactions(prev => [...prev, reaction]);
   };
-
-  const [videoEvents, setVideoEvents] = useState<(VideoEvent | VideoChangedEvent)[]>([]);
-
-  useEffect(() => {
-    if (messages.length === 0) return;
-    const lastMessage = messages[messages.length - 1];
-    const isVideoEvent = 
-      lastMessage.type === 'video_play' || 
-      lastMessage.type === 'video_pause' || 
-      lastMessage.type === 'video_seek' || 
-      lastMessage.type === 'video_changed';
-
-    if (isVideoEvent) {
-      setVideoEvents((prev) => {
-        const exists = prev.some((e) => e.timestamp === lastMessage.timestamp && e.type === lastMessage.type);
-        if (exists) return prev;
-        return [...prev, lastMessage as VideoEvent | VideoChangedEvent];
-      });
-    }
-  }, [messages]);
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
@@ -243,7 +221,16 @@ export function RoomPage() {
 
       <main className="flex-1 flex flex-col lg:flex-row overflow-hidden">
         <div className="flex-1 relative bg-black flex flex-col min-h-[240px] md:min-h-[400px] lg:min-h-0">
-          <VideoPlayer url={videoUrl} isHost={isHost} videoEvents={videoEvents} onPlay={handleVideoPlay} onPause={handleVideoPause} onSeek={handleVideoSeek} />
+          <VideoPlayer
+            url={videoUrl}
+            isHost={isHost}
+            videoEvents={videoEvents}
+            initialPosition={room.current_position}
+            initialIsPlaying={room.is_playing}
+            onPlay={handleVideoPlay}
+            onPause={handleVideoPause}
+            onSeek={handleVideoSeek}
+          />
           <ReactionOverlay reactions={activeReactions} />
           
           <div className="absolute bottom-3 md:bottom-6 left-1/2 -translate-x-1/2 flex gap-2 md:gap-3 bg-black/60 backdrop-blur-md p-2 md:p-3 rounded-full border border-white/10 z-30">

@@ -17,6 +17,52 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 redis_client = aioredis.from_url(REDIS_URL, decode_responses=True)
 
 
+def _video_state_key(code: str) -> str:
+    return f"room:video_state:{code}"
+
+
+async def _persist_video_state(code: str, payload: dict) -> None:
+    """Store current playback state so late joiners can sync immediately."""
+    event_type = payload.get("type")
+    if event_type not in ("video_play", "video_pause", "video_seek"):
+        return
+
+    position = float(payload.get("position", 0) or 0)
+    is_playing = event_type == "video_play"
+
+    state = {
+        "type": "video_state",
+        "position": position,
+        "is_playing": is_playing,
+        "timestamp": payload.get("timestamp") or __import__("datetime").datetime.utcnow().isoformat(),
+    }
+    await redis_client.set(_video_state_key(code), json.dumps(state))
+
+
+async def _get_video_state(code: str) -> dict | None:
+    raw = await redis_client.get(_video_state_key(code))
+    if not raw:
+        return None
+    try:
+        state = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+
+    if not state.get("is_playing"):
+        return state
+
+    from datetime import datetime
+
+    try:
+        last_ts = datetime.fromisoformat(state["timestamp"].replace("Z", "+00:00"))
+        elapsed = (datetime.utcnow() - last_ts.replace(tzinfo=None)).total_seconds()
+        state["position"] = max(0.0, float(state.get("position", 0)) + max(0.0, elapsed))
+    except (ValueError, TypeError):
+        pass
+
+    return state
+
+
 @router.post("/", response_model=RoomResponse, status_code=status.HTTP_201_CREATED)
 async def create_new_room(
     room_data: RoomCreate, 
@@ -103,6 +149,8 @@ async def update_room_video(
     await db.commit()
     await db.refresh(room)
     
+    await redis_client.delete(_video_state_key(code))
+    
     await redis_client.publish(f"room:events:{code}", json.dumps({
         "type": "video_changed",
         "url": url,
@@ -164,6 +212,11 @@ async def room_websocket(websocket: WebSocket, code: str):
             "username": user_email
         }))
 
+        video_state = await _get_video_state(code)
+        if video_state and not is_host:
+            await websocket.send_text(json.dumps(video_state))
+            print(f"📼 [WS] Отправлен снимок видео гостю {user_id}: {video_state}")
+
         async def listen_redis():
             try:
                 async for message in pubsub.listen():
@@ -180,6 +233,11 @@ async def room_websocket(websocket: WebSocket, code: str):
         while True:
             try:
                 data = await websocket.receive_text()
+                try:
+                    payload = json.loads(data)
+                    await _persist_video_state(code, payload)
+                except json.JSONDecodeError:
+                    pass
                 await redis_client.publish(channel_name, data)
             except WebSocketDisconnect:
                 print(f"🔴 [WS] Клиент отключился: {code}")

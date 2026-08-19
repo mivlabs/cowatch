@@ -22,6 +22,13 @@ export interface VideoChangedEvent {
   timestamp: string;
 }
 
+export interface VideoStateSnapshot {
+  type: 'video_state';
+  position: number;
+  is_playing: boolean;
+  timestamp: string;
+}
+
 export interface VideoReaction {
   type: 'video_reaction';
   emoji: string;
@@ -40,9 +47,20 @@ export interface ConnectionMessage {
   type: 'connected';
   message: string;
   is_host?: boolean;
+  user_id?: number;
+  username?: string;
 }
 
-export type WSMessage = ChatMessage | VideoEvent | VideoChangedEvent | VideoReaction | SystemMessage | ConnectionMessage;
+export type WSMessage =
+  | ChatMessage
+  | VideoEvent
+  | VideoChangedEvent
+  | VideoStateSnapshot
+  | VideoReaction
+  | SystemMessage
+  | ConnectionMessage;
+
+export type VideoSyncMessage = VideoEvent | VideoChangedEvent | VideoStateSnapshot;
 
 interface UseRoomWebSocketOptions {
   code: string;
@@ -50,51 +68,72 @@ interface UseRoomWebSocketOptions {
   username: string;
 }
 
+function isVideoSyncMessage(message: WSMessage): message is VideoSyncMessage {
+  return (
+    message.type === 'video_play' ||
+    message.type === 'video_pause' ||
+    message.type === 'video_seek' ||
+    message.type === 'video_changed' ||
+    message.type === 'video_state'
+  );
+}
+
+function isDuplicateMessage(prev: WSMessage | undefined, next: WSMessage): boolean {
+  if (!prev || !('timestamp' in prev) || !('timestamp' in next)) {
+    return false;
+  }
+  return prev.type === next.type && prev.timestamp === next.timestamp;
+}
+
 export function useRoomWebSocket({ code, userId, username }: UseRoomWebSocketOptions) {
   const [messages, setMessages] = useState<WSMessage[]>([]);
-  const messagesRef = useRef<WSMessage[]>([]); // 🔥 Храним актуальное состояние здесь
+  const [videoEvents, setVideoEvents] = useState<VideoSyncMessage[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [isHost, setIsHost] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const messagesRef = useRef<WSMessage[]>([]);
+  const videoEventsRef = useRef<VideoSyncMessage[]>([]);
 
   useEffect(() => {
+    if (!code) {
+      return;
+    }
+
     const token = localStorage.getItem('cowatch_token') || '';
     const wsBaseUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8003';
     const wsUrl = `${wsBaseUrl}/rooms/ws/${code}?token=${encodeURIComponent(token)}`;
-    
+
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
       setIsConnected(true);
-      console.log('✅ WebSocket подключен к комнате', code);
     };
 
     ws.onmessage = (event) => {
       try {
-        const data: WSMessage = JSON.parse(event.data);
-        
-        if (data.type === 'connected' && 'is_host' in data) {
-          setIsHost(data.is_host || false);
-          console.log('👑 Хост статус получен:', data.is_host);
-        }
-        
-        // 🔥 ПРОФЕССИОНАЛЬНОЕ ОБНОВЛЕНИЕ СОСТОЯНИЯ БЕЗ ЦИКЛОВ
+        const data = JSON.parse(event.data) as WSMessage;
         const lastMessage = messagesRef.current[messagesRef.current.length - 1];
-        
-        // Если это дубликат последнего сообщения, игнорируем его
-        if (lastMessage && 
-            lastMessage.timestamp === data.timestamp &&
-            lastMessage.type === data.type) {
-          console.log('⏸️ [WS] Игнорируем дубликат сообщения:', data.type);
+
+        if (isDuplicateMessage(lastMessage, data)) {
           return;
         }
 
-        // Обновляем референс и стейт
+        if (data.type === 'connected' && 'is_host' in data) {
+          setIsHost(Boolean(data.is_host));
+        }
+
         messagesRef.current = [...messagesRef.current, data];
-        setMessages(messagesRef.current); // Передаем ту же ссылку, что и в ref
-        
-      } catch (error) {
+        setMessages(messagesRef.current);
+
+        if (isVideoSyncMessage(data)) {
+          const lastVideoEvent = videoEventsRef.current[videoEventsRef.current.length - 1];
+          if (!isDuplicateMessage(lastVideoEvent, data)) {
+            videoEventsRef.current = [...videoEventsRef.current, data];
+            setVideoEvents(videoEventsRef.current);
+          }
+        }
+      } catch {
         const systemMsg: SystemMessage = {
           type: 'system',
           content: event.data,
@@ -107,20 +146,24 @@ export function useRoomWebSocket({ code, userId, username }: UseRoomWebSocketOpt
 
     ws.onclose = () => {
       setIsConnected(false);
-      console.log('🔴 WebSocket отключен');
     };
 
-    ws.onerror = (error) => {
-      console.error('❌ WebSocket ошибка:', error);
+    ws.onerror = () => {
+      setIsConnected(false);
     };
 
     return () => {
       ws.close();
+      wsRef.current = null;
     };
   }, [code]);
 
-  const sendChatMessage = useCallback((content: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
+  const sendChatMessage = useCallback(
+    (content: string) => {
+      if (wsRef.current?.readyState !== WebSocket.OPEN) {
+        return;
+      }
+
       const message: ChatMessage = {
         type: 'chat_message',
         content,
@@ -129,11 +172,16 @@ export function useRoomWebSocket({ code, userId, username }: UseRoomWebSocketOpt
         timestamp: new Date().toISOString(),
       };
       wsRef.current.send(JSON.stringify(message));
-    }
-  }, [userId, username]);
+    },
+    [userId, username],
+  );
 
-  const sendVideoEvent = useCallback((type: 'video_play' | 'video_pause' | 'video_seek', position: number) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
+  const sendVideoEvent = useCallback(
+    (type: 'video_play' | 'video_pause' | 'video_seek', position: number) => {
+      if (wsRef.current?.readyState !== WebSocket.OPEN) {
+        return;
+      }
+
       const event: VideoEvent = {
         type,
         user_id: userId,
@@ -141,11 +189,16 @@ export function useRoomWebSocket({ code, userId, username }: UseRoomWebSocketOpt
         timestamp: new Date().toISOString(),
       };
       wsRef.current.send(JSON.stringify(event));
-    }
-  }, [userId]);
+    },
+    [userId],
+  );
 
-  const sendReaction = useCallback((emoji: string) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
+  const sendReaction = useCallback(
+    (emoji: string) => {
+      if (wsRef.current?.readyState !== WebSocket.OPEN) {
+        return;
+      }
+
       const reaction: VideoReaction = {
         type: 'video_reaction',
         emoji,
@@ -154,8 +207,17 @@ export function useRoomWebSocket({ code, userId, username }: UseRoomWebSocketOpt
         timestamp: new Date().toISOString(),
       };
       wsRef.current.send(JSON.stringify(reaction));
-    }
-  }, [userId, username]);
+    },
+    [userId, username],
+  );
 
-  return { messages, isConnected, sendChatMessage, sendVideoEvent, sendReaction, isHost };
+  return {
+    messages,
+    videoEvents,
+    isConnected,
+    sendChatMessage,
+    sendVideoEvent,
+    sendReaction,
+    isHost,
+  };
 }

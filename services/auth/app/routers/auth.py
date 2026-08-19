@@ -115,18 +115,30 @@ async def login_as_guest(username: str = Query(..., min_length=2, max_length=20)
     access_token = create_access_token(data={"sub": f"guest_{username}", "user_id": guest_id})
     return Token(access_token=access_token, refresh_token="guest_session")
 
-# ЭНДПОИНТ ПРОФИЛЯ:
+# 🔥 ИСПРАВЛЕННЫЙ ЭНДПОИНТ ПРОФИЛЯ (Работает и для гостей, и без ошибки username)
 @router.get("/profile/{user_id}", response_model=ProfileStatsResponse)
 async def get_profile_stats(user_id: int, db: AsyncSession = Depends(get_db)):
     from app.models.achievement import UserAchievement, Achievement, WatchHistory
     from app.models.user import User 
     
-    # 1. Получаем пользователя
+    # 1. Пытаемся получить пользователя из БД
     user = await db.get(User, user_id)
+    
+    # 2. Если пользователя нет в БД — это ГОСТЬ. Возвращаем безопасный профиль, чтобы фронтенд не падал.
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+        return ProfileStatsResponse(
+            username=f"Гость_{user_id}",
+            email=None,
+            total_movies=0,
+            total_hours=0.0,
+            achievements=[],
+            history=[]
+        )
 
-    # 2. Получаем ачивки
+    # 3. Безопасно получаем имя: если поля username нет, берем email или дефолтное значение
+    display_name = getattr(user, 'username', None) or user.email or f"User_{user.id}"
+
+    # 4. Получаем ачивки
     achievements_query = await db.execute(
         select(Achievement)
         .join(UserAchievement, Achievement.id == UserAchievement.achievement_id)
@@ -134,7 +146,7 @@ async def get_profile_stats(user_id: int, db: AsyncSession = Depends(get_db)):
     )
     achievements = achievements_query.scalars().all()
 
-    # 3. Получаем историю (последние 10)
+    # 5. Получаем историю (последние 10)
     history_query = await db.execute(
         select(WatchHistory)
         .where(WatchHistory.user_id == user_id)
@@ -143,12 +155,12 @@ async def get_profile_stats(user_id: int, db: AsyncSession = Depends(get_db)):
     )
     history = history_query.scalars().all()
 
-    # 4. Считаем статистику
+    # 6. Считаем статистику
     total_movies = len(history)
-    total_hours = total_movies * 2.0 # Заглушка: 1 фильм = 2 часа
+    total_hours = total_movies * 2.0 
 
     return ProfileStatsResponse(
-        username=user.username,
+        username=display_name,
         email=user.email,
         total_movies=total_movies,
         total_hours=total_hours,

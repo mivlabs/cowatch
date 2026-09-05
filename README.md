@@ -8,6 +8,7 @@
 
 <br />
 
+[![CI](https://img.shields.io/github/actions/workflow/status/mivlabs/cowatch/ci.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/mivlabs/cowatch/actions/workflows/ci.yml)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -150,12 +151,20 @@ VITE_WS_URL=ws://localhost:8003
 cowatch/
 ├── frontend/           # React SPA
 ├── services/
-│   ├── auth/         # Регистрация, логин, гостевой JWT
-│   ├── rooms/        # Комнаты, WebSocket, синхронизация видео
-│   └── messages/     # Сервис сообщений
+│   ├── auth/          # Регистрация, логин, гостевой JWT
+│   ├── rooms/         # Комнаты, WebSocket, синхронизация видео
+│   ├── messages/      # Сервис сообщений
+│   ├── gateway/       # WIP: единая точка входа, ещё не реализован
+│   └── notifications/ # WIP: email/push, ещё не реализован
+├── tests/              # pytest для auth/rooms/messages
+├── infra/postgres/     # init-скрипт БД для docker-compose
 ├── docker-compose.yml
 └── README.md
 ```
+
+> `gateway` и `notifications` пока присутствуют в `docker-compose.yml` как заготовки
+> (папки, Dockerfile, пустой `app/main.py`) — реальный трафик через них не идёт,
+> фронтенд ходит в `auth`/`rooms`/`messages` напрямую по портам 8001–8002/8003.
 
 ---
 
@@ -168,6 +177,7 @@ cowatch/
 | `POST` | `/auth/guest?username=…` | Гостевой вход |
 | `POST` | `/rooms/` | Создать комнату |
 | `GET` | `/rooms/{code}` | Получить комнату |
+| `POST` | `/rooms/{code}/join` | Присоединиться к комнате |
 | `PATCH` | `/rooms/{code}/video` | Сменить видео (только хост) |
 | `WS` | `/rooms/ws/{code}?token=…` | Чат, видео-события, реакции |
 
@@ -184,6 +194,30 @@ cowatch/
 - API Gateway как единая точка входа
 - Уведомления при приглашении в комнату
 - Более точная синхронизация с учётом сетевой задержки
+
+---
+
+## Тестирование
+
+pytest гоняется отдельно на каждый сервис (`auth`, `rooms`, `messages` — все три
+называют свой корневой пакет `app`, поэтому им нужен разный `PYTHONPATH`; `scripts/test.sh`
+уже это учитывает). Нужны поднятые Postgres и Redis:
+
+```bash
+docker-compose up -d postgres redis
+
+pip install -r requirements-dev.txt
+pip install -r services/auth/requirements.txt      # для конкретного сервиса
+./scripts/test.sh auth                              # или без аргумента — все сразу
+```
+
+`rooms` тестируется против настоящего Postgres, а не sqlite: `Room.id` — колонка
+типа `UUID`, специфичная для диалекта postgresql, на sqlite такая таблица просто
+не создастся.
+
+CI (`.github/workflows/ci.yml`) поднимает postgres/redis как сервис-контейнеры и
+гоняет тот же `scripts/test.sh` по каждому сервису в матрице, плюс `ruff check` и
+сборку фронтенда.
 
 ---
 

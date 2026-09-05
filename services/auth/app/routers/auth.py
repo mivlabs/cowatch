@@ -138,13 +138,23 @@ async def get_profile_stats(user_id: int, db: AsyncSession = Depends(get_db)):
     # 3. Безопасно получаем имя: если поля username нет, берем email или дефолтное значение
     display_name = getattr(user, 'username', None) or user.email or f"User_{user.id}"
 
-    # 4. Получаем ачивки
+    # 4. Получаем ачивки (вместе с unlocked_at из UserAchievement — Achievement сам
+    # по себе этой колонки не хранит, а AchievementResponse её требует)
     achievements_query = await db.execute(
-        select(Achievement)
+        select(Achievement, UserAchievement.unlocked_at)
         .join(UserAchievement, Achievement.id == UserAchievement.achievement_id)
         .where(UserAchievement.user_id == user_id)
     )
-    achievements = achievements_query.scalars().all()
+    achievements = [
+        AchievementResponse(
+            id=achievement.id,
+            title=achievement.title,
+            description=achievement.description,
+            icon=achievement.icon,
+            unlocked_at=unlocked_at,
+        )
+        for achievement, unlocked_at in achievements_query.all()
+    ]
 
     # 5. Получаем историю (последние 10)
     history_query = await db.execute(
@@ -164,6 +174,6 @@ async def get_profile_stats(user_id: int, db: AsyncSession = Depends(get_db)):
         email=user.email,
         total_movies=total_movies,
         total_hours=total_hours,
-        achievements=[AchievementResponse.model_validate(a) for a in achievements],
+        achievements=achievements,
         history=[HistoryResponse.model_validate(h) for h in history]
     )

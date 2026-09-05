@@ -39,6 +39,7 @@ sys.path.insert(0, str(SERVICE_ROOT))
 from app.database import Base, engine  # noqa: E402
 from app.main import app  # noqa: E402
 from app.routers.rooms import redis_client  # noqa: E402
+from app.services.room_service import redis_client as room_service_redis_client  # noqa: E402
 
 
 def make_token(user_id: int, email: str) -> str:
@@ -68,6 +69,14 @@ async def _clean_state():
         await conn.run_sync(Base.metadata.create_all)
     await redis_client.flushdb()
     yield
+    # pytest-asyncio даёт каждому тесту свой event loop, а engine/redis-клиенты —
+    # общие на процесс: без закрытия их пулы пытаются переиспользовать соединения,
+    # открытые в уже закрытом loop прошлого теста ("attached to a different loop").
+    # rooms.py и room_service.py держат каждый свой Redis-клиент (см. коммит про
+    # рассинхрон REDIS_URL) — закрывать нужно оба.
+    await engine.dispose()
+    await redis_client.aclose()
+    await room_service_redis_client.aclose()
 
 
 @pytest_asyncio.fixture

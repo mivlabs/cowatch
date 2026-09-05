@@ -32,7 +32,14 @@ async def _clean_database():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+    # Разные тесты используют engine из разных event loop'ов (async `client`
+    # против sync `TestClient`, который гоняет lifespan в отдельном потоке
+    # со своим loop) — без dispose() сразу после сетапа пул пытается
+    # переиспользовать asyncpg-соединение из чужого loop ("attached to a
+    # different loop"). Диспозим и до, и после теста.
+    await engine.dispose()
     yield
+    await engine.dispose()
 
 
 @pytest_asyncio.fixture

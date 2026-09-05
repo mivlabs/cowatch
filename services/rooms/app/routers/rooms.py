@@ -6,14 +6,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import redis.asyncio as aioredis
 
 from app.database import get_db
-from app.schemas.room import RoomCreate, RoomResponse
-from app.services.room_service import create_room, get_room_by_code
+from app.schemas.room import RoomCreate, RoomResponse, JoinRoomResponse
+from app.services.room_service import (
+    create_room,
+    get_room_by_code,
+    join_room,
+    get_participants_count,
+)
 from app.core.security import get_user_id_from_token, get_user_email_from_token
 from app.core.dependencies import get_current_user
 
 router = APIRouter(prefix="/rooms", tags=["Rooms"])
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
+# Тот же дефолт, что и в room_service.py — иначе без REDIS_URL в окружении
+# этот клиент и join_room() пишут в разные логические базы Redis (0 и 3).
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/3")
 redis_client = aioredis.from_url(REDIS_URL, decode_responses=True)
 
 
@@ -119,6 +126,40 @@ async def get_room(code: str, db: AsyncSession = Depends(get_db)):
         "is_playing": bool(getattr(room, 'is_playing', False)),
         "created_at": str(getattr(room, 'created_at', '')),
         "participants_count": participants_count
+    }
+
+
+@router.post("/{code}/join", response_model=JoinRoomResponse)
+async def join_existing_room(
+    code: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Присоединяет текущего пользователя к комнате по коду и сохраняет его как участника в БД.
+
+    Раньше эта логика (room_service.join_room) была написана, но никогда не вызывалась —
+    участники, зашедшие через WebSocket, не появлялись в таблице participants.
+    """
+    result = await join_room(db, code, current_user["id"])
+    room = result["room"]
+    participants_count = await get_participants_count(db, room.id)
+
+    return {
+        "room": {
+            "id": room.id,
+            "code": room.code,
+            "host_id": room.host_id,
+            "title": room.title,
+            "is_private": room.is_private,
+            "max_participants": room.max_participants,
+            "current_movie_url": room.current_movie_url,
+            "current_movie_title": room.current_movie_title,
+            "current_position": room.current_position,
+            "is_playing": room.is_playing,
+            "created_at": room.created_at,
+            "participants_count": participants_count,
+        },
+        "user_role": result["user_role"],
     }
 
 

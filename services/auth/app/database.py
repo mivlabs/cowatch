@@ -4,7 +4,7 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://postgres:qzdaFiShnHdATZjHmmkZGOHDzfMHXxOH@postgres.railway.internal:5432/railway"
+    "postgresql+asyncpg://postgres:postgres@localhost:5432/auth_db"
 )
 
 engine = create_async_engine(

@@ -1,0 +1,7 @@
+# Зависимости для тестов и линтинга. Ставится поверх requirements.txt
+# конкретного сервиса: pip install -r services/auth/requirements.txt -r requirements-dev.txt
+pytest==8.3.4
+pytest-asyncio==0.24.0
+pytest-cov==6.0.0
+httpx==0.26.0
+ruff==0.8.4

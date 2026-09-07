@@ -48,3 +48,6 @@ htmlcov/
 */.venv/
 
 node_modules/
+
+# Local patch tooling (not for repo)
+apply-patches.sh

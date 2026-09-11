@@ -1,0 +1,13 @@
+{
+  "model_version": "40384d16049b448a98f99e0536e48b40",
+  "model_type": "collaborative_svd",
+  "trained_at": "2026-09-11T13:15:49.705321+00:00",
+  "n_items": 9742,
+  "n_users": 610,
+  "n_interactions": 100836,
+  "precision_at_k": 0.0072,
+  "recall_at_k": 0.0721,
+  "hit_rate_at_k": 0.0721,
+  "k": 10,
+  "n_factors": 50
+}

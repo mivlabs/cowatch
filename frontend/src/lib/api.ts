@@ -5,7 +5,9 @@ import axios from 'axios';
 
 const API_URL = 'http://localhost:8003';
 const AUTH_URL = 'http://localhost:8001';
-const RECOMMENDATIONS_URL = 'http://localhost:8005';
+
+// const RECOMMENDATIONS_URL = 'http://localhost:8005';
+const RECOMMENDATIONS_URL = 'https://recommendations-production-8eb9.up.railway.app';
 
 export const recommendationsApi = axios.create({
   baseURL: RECOMMENDATIONS_URL,

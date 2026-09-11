@@ -17,7 +17,7 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-SERVICES=("auth" "rooms" "messages" "notifications")
+SERVICES=("auth" "rooms" "messages" "notifications" "recommendations")
 if [[ $# -gt 0 ]]; then
   SERVICES=("$@")
 fi

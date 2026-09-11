@@ -113,6 +113,30 @@ services:
       - ./services/rooms:/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
+    # Recommendations Service — content-based рекомендации фильмов (ML)
+  recommendations:
+    build: ./services/recommendations
+    container_name: realtime_recommendations
+    ports:
+      - "8005:8000"
+    env_file:
+      - .env
+    environment:
+      SERVICE_NAME: recommendations
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/recommendations_db
+      ROOMS_DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/rooms_db
+      REDIS_URL: redis://redis:6379/4
+      MLFLOW_TRACKING_URI: file:./mlruns
+      # TMDB_API_KEY: задать в .env — без ключа ETL/train работают в degraded-режиме (см. README)
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./services/recommendations:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
   # Notifications Service — email/push уведомления
   notifications:
     build: ./services/notifications

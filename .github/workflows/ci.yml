@@ -28,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [auth, rooms, messages]
+        service: [auth, rooms, messages, recommendations]
     services:
       postgres:
         image: postgres:16-alpine
@@ -56,6 +56,7 @@ jobs:
       TEST_AUTH_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/auth_test
       TEST_ROOMS_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/rooms_test
       TEST_MESSAGES_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/messages_test
+      TEST_RECOMMENDATIONS_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/recommendations_test
       TEST_REDIS_URL: redis://localhost:6379/13
     steps:
       - uses: actions/checkout@v4
@@ -67,6 +68,7 @@ jobs:
           PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c "CREATE DATABASE auth_test;"
           PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c "CREATE DATABASE rooms_test;"
           PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c "CREATE DATABASE messages_test;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c "CREATE DATABASE recommendations_test;"
       - name: Install dependencies
         run: |
           pip install -r services/${{ matrix.service }}/requirements.txt
@@ -88,10 +90,7 @@ jobs:
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
-      # continue-on-error: тот же накопленный lint-долг, что и у ruff выше —
-      # eslint.config.js в репозитории не было вовсе, эту первую проверку
-      # уже даёт 19 pre-existing ошибок в существующем коде. Информационный
-      # шаг, пока долг не разберут отдельно; тогда строку нужно убрать.
+
       - run: npm run lint
         continue-on-error: true
       - run: npm run build

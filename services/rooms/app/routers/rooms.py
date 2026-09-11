@@ -123,6 +123,7 @@ async def get_room(code: str, db: AsyncSession = Depends(get_db)):
         "max_participants": getattr(room, 'max_participants', 10),
         "current_movie_url": getattr(room, 'current_movie_url', None),
         "current_movie_title": getattr(room, 'current_movie_title', None),
+        "content_id": getattr(room, 'content_id', None),
         "current_position": float(getattr(room, 'current_position', 0) or 0),
         "is_playing": bool(getattr(room, 'is_playing', False)),
         "created_at": str(getattr(room, 'created_at', '')),

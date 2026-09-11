@@ -29,6 +29,7 @@ class Room(Base):
     current_movie_url = Column(String(500), nullable=True)
     current_movie_title = Column(String(200), nullable=True)
     current_position = Column(Integer, default=0)
+    content_id = Column(Integer, nullable=True, index=True)  # ссылается на content_items.id в recommendations_db, без настоящего FK (разные БД)
     is_playing = Column(Boolean, default=False)
     last_sync_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     created_at = Column(DateTime(timezone=True), server_default=func.now())

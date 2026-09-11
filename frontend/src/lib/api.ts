@@ -1,8 +1,17 @@
 import axios from 'axios';
 
-// 🔥 ЖЕСТКИЙ ХАРДКОД ДЛЯ ТЕСТА (потом заменим на переменные)
-const API_URL = 'https://rooms-production-f3bb.up.railway.app';
-const AUTH_URL = 'https://auth-production-8d2e.up.railway.app';
+// const API_URL = 'https://rooms-production-f3bb.up.railway.app';
+// const AUTH_URL = 'https://auth-production-8d2e.up.railway.app';
+
+const API_URL = 'http://localhost:8003';
+const AUTH_URL = 'http://localhost:8001';
+const RECOMMENDATIONS_URL = 'http://localhost:8005';
+
+export const recommendationsApi = axios.create({
+  baseURL: RECOMMENDATIONS_URL,
+  headers: { 'Content-Type': 'application/json' },
+});
+
 
 export const api = axios.create({
   baseURL: API_URL,

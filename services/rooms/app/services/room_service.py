@@ -14,14 +14,15 @@ redis_client = aioredis.from_url(REDIS_URL, decode_responses=True)
 
 
 async def create_room(db: AsyncSession, room_in: RoomCreate, user_id: int) -> Room:
-    """
-    Создаёт комнату и добавляет создателя как host.
-    """
+
+    # Создаёт комнату и добавляет создателя как host.
+
     room = Room(
         host_id=user_id,
         title=room_in.title,
         is_private=room_in.is_private,
         max_participants=room_in.max_participants,
+        content_id=room_in.content_id,
     )
     db.add(room)
     await db.flush()  # Получаем room.id без commit

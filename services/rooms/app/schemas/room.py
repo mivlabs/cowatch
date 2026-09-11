@@ -8,6 +8,7 @@ class RoomCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=100)
     is_private: bool = True
     max_participants: int = Field(default=10, ge=2, le=50)
+    content_id: Optional[int] = None  # фильм/сериал из каталога recommendations, опционально
 
 
 class RoomResponse(BaseModel):
@@ -19,6 +20,7 @@ class RoomResponse(BaseModel):
     max_participants: int
     current_movie_url: Optional[str] = None
     current_movie_title: Optional[str] = None
+    content_id: Optional[int] = None
     current_position: int
     is_playing: bool
     created_at: datetime

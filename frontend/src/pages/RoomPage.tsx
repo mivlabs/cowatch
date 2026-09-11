@@ -1,26 +1,36 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Users, MessageSquare, Send, Copy, Wifi, WifiOff } from 'lucide-react';
+import { ArrowLeft, Users, MessageSquare, Send, Copy, Wifi, WifiOff, Film } from 'lucide-react';
 import { useState, useRef, useEffect, useCallback } from 'react';
 
-import { api } from '@/lib/api';
+import { api, recommendationsApi } from '@/lib/api';
 import type { Room } from '@/types/room';
 import { VideoPlayer } from '@/components/VideoPlayer';
 import { ReactionOverlay } from '@/components/ReactionOverlay';
 import { Avatar } from '@/components/Avatar';
 import { useAuth } from '@/contexts/AuthContext';
-import { 
-  useRoomWebSocket, 
-  type VideoReaction 
+import {
+  useRoomWebSocket,
+  type VideoReaction
 } from '@/hooks/useRoomWebSocket';
+
+// Минимальная форма ответа GET /catalog/{content_id} — нужны только поля для
+// баннера "вы выбрали этот фильм", остальное (жанры и т.д.) тут не нужно.
+interface SelectedCatalogItem {
+  id: number;
+  title: string;
+  media_type: string;
+  poster_path: string | null;
+  release_year: number | null;
+}
 
 export function RoomPage() {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
   const { user, isAuthenticated, isInitialized } = useAuth();
   const queryClient = useQueryClient();
-  
+
   const [chatInput, setChatInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [activeReactions, setActiveReactions] = useState<VideoReaction[]>([]);
@@ -47,6 +57,20 @@ export function RoomPage() {
       return response.data;
     },
     enabled: !!code,
+  });
+
+  // Комната хранит только room.content_id (число, ссылка на каталог фильмов
+  // в recommendations-сервисе) — чтобы показать хосту постер/название того,
+  // что он выбрал при создании комнаты, тянем карточку отдельным запросом
+  // (разные БД, cross-service, JOIN тут в принципе невозможен).
+  const { data: selectedMovie } = useQuery<SelectedCatalogItem>({
+    queryKey: ['catalog-item', room?.content_id],
+    queryFn: async () => {
+      const response = await recommendationsApi.get<SelectedCatalogItem>(`/catalog/${room!.content_id}`);
+      return response.data;
+    },
+    enabled: !!room?.content_id,
+    staleTime: Infinity, // карточка каталога не меняется, перезапрашивать нет смысла
   });
 
   useEffect(() => {
@@ -174,8 +198,34 @@ export function RoomPage() {
         </div>
       </header>
 
+      {isHost && selectedMovie && (
+        <div className="border-b border-white/10 px-3 md:px-4 py-2 bg-primary/10 flex items-center gap-3">
+          {selectedMovie.poster_path ? (
+            <img
+              src={`https://image.tmdb.org/t/p/w92${selectedMovie.poster_path}`}
+              alt={selectedMovie.title}
+              className="w-8 h-11 md:w-10 md:h-14 object-cover rounded flex-shrink-0"
+            />
+          ) : (
+            <div className="w-8 h-11 md:w-10 md:h-14 rounded bg-muted/40 flex items-center justify-center flex-shrink-0">
+              <Film className="w-4 h-4 text-muted-foreground" />
+            </div>
+          )}
+          <div className="min-w-0">
+            <p className="text-[10px] md:text-xs text-muted-foreground">Вы выбрали при создании комнаты</p>
+            <p className="text-sm md:text-base font-semibold truncate">
+              {selectedMovie.title}
+              {selectedMovie.release_year ? ` (${selectedMovie.release_year})` : ''}
+            </p>
+          </div>
+          <p className="hidden md:block text-xs text-muted-foreground ml-auto flex-shrink-0">
+            Вставьте ссылку на это видео ниже ↓
+          </p>
+        </div>
+      )}
+
       {isHost && (
-        <form 
+        <form
           onSubmit={async (e) => {
             e.preventDefault();
             if (isSubmitting) return;
@@ -203,15 +253,15 @@ export function RoomPage() {
           className="border-b border-white/10 p-2 md:p-3 bg-muted/20 flex gap-2 items-center"
         >
           <span className="text-xs md:text-sm text-muted-foreground whitespace-nowrap">🎬</span>
-          <input 
-            name="videoUrl" 
-            type="text" 
-            placeholder="Ссылка на YouTube или Rutube..." 
-            className="flex-1 min-w-0 px-3 py-2 bg-background border border-white/10 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-primary" 
+          <input
+            name="videoUrl"
+            type="text"
+            placeholder="Ссылка на YouTube или Rutube..."
+            className="flex-1 min-w-0 px-3 py-2 bg-background border border-white/10 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-primary"
           />
-          <button 
-            type="submit" 
-            disabled={isSubmitting} 
+          <button
+            type="submit"
+            disabled={isSubmitting}
             className="px-3 md:px-4 py-2 bg-primary text-primary-foreground rounded-lg text-xs md:text-sm font-medium hover:bg-primary/90 transition-colors whitespace-nowrap disabled:opacity-50"
           >
             {isSubmitting ? '...' : 'Загрузить'}
@@ -232,7 +282,7 @@ export function RoomPage() {
             onSeek={handleVideoSeek}
           />
           <ReactionOverlay reactions={activeReactions} />
-          
+
           <div className="absolute bottom-3 md:bottom-6 left-1/2 -translate-x-1/2 flex gap-2 md:gap-3 bg-black/60 backdrop-blur-md p-2 md:p-3 rounded-full border border-white/10 z-30">
             {['❤️', '🔥', '😂', '😮', '👏'].map(emoji => (
               <button
@@ -293,7 +343,7 @@ export function RoomPage() {
                 disabled={!isConnected}
                 className="flex-1 min-w-0 px-3 py-2 bg-background border border-white/10 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
               />
-              <button 
+              <button
                 type="submit"
                 disabled={!isConnected || !chatInput.trim()}
                 className="p-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 flex-shrink-0"
@@ -306,4 +356,4 @@ export function RoomPage() {
       </main>
     </div>
   );
-} 
+}

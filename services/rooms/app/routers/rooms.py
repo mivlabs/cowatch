@@ -93,6 +93,7 @@ async def create_new_room(
         "max_participants": getattr(new_room, 'max_participants', room_data.max_participants),
         "current_movie_url": getattr(new_room, 'current_movie_url', None),
         "current_movie_title": getattr(new_room, 'current_movie_title', None),
+        "content_id": getattr(new_room, 'content_id', None),
         "current_position": float(getattr(new_room, 'current_position', 0) or 0),
         "is_playing": bool(getattr(new_room, 'is_playing', False)),
         "created_at": str(getattr(new_room, 'created_at', '')),

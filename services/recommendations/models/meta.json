@@ -1,11 +1,12 @@
 {
-  "model_version": "b6e9a039175d49f69fd50da4e2fed00c",
-  "trained_at": "2026-09-11T13:15:25.853722+00:00",
-  "n_items": 9742,
-  "n_users": 610,
-  "n_interactions": 100836,
+  "model_version": "catalog-20260911T152912Z",
+  "trained_at": "2026-09-11T15:29:12.810352+00:00",
+  "n_items": 181,
+  "n_users": 3,
+  "n_interactions": 3,
   "precision_at_k": 0.0,
   "recall_at_k": 0.0,
   "hit_rate_at_k": 0.0,
-  "k": 10
+  "k": 10,
+  "source": "catalog"
 }

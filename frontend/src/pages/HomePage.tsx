@@ -1,10 +1,22 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Film, Users, Zap, ArrowRight, LogOut } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Film, Users, Zap, ArrowRight, LogOut, Sparkles } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { recommendationsApi } from '@/lib/api';
 import { JoinModal } from '@/components/JoinModal';
 import { Avatar } from '@/components/Avatar';
+
+const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w342';
+
+interface RecommendedItem {
+  content_id: number;
+  title: string;
+  genres: string[];
+  poster_path: string | null;
+  release_year: number | null;
+}
 
 export function HomePage() {
   const [roomCode, setRoomCode] = useState('');
@@ -12,6 +24,36 @@ export function HomePage() {
   const [modalRoomCode, setModalRoomCode] = useState<string | undefined>();
   const navigate = useNavigate();
   const { logout, user, isAuthenticated } = useAuth();
+
+  // Блок "Рекомендуем": молча ничего не рендерим, если модель ещё не
+  // обучена (503) или рекомендаций нет — это не ошибка, которую стоит
+  // показывать пользователю на главной странице.
+  const recommendationsQuery = useQuery({
+    queryKey: ['home-recommendations', user?.id],
+    queryFn: async (): Promise<RecommendedItem[]> => {
+      const response = await recommendationsApi.get(`/recommendations/${user!.id}`, {
+        params: { k: 10 },
+      });
+      return response.data.items;
+    },
+    enabled: !!user?.id,
+    retry: false,
+  });
+
+  const handleRecommendationClick = (item: RecommendedItem) => {
+    navigate('/create', {
+      state: {
+        preselected: {
+          id: item.content_id,
+          title: item.title,
+          media_type: 'movie',
+          genres: item.genres,
+          poster_path: item.poster_path,
+          release_year: item.release_year,
+        },
+      },
+    });
+  };
 
   const handleJoin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -160,6 +202,43 @@ export function HomePage() {
             </motion.div>
           ))}
         </div>
+
+        {recommendationsQuery.data && recommendationsQuery.data.length > 0 && (
+          <div className="mt-8 text-left">
+            <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-purple-400" />
+              Рекомендуем
+            </h2>
+            <div className="flex gap-4 overflow-x-auto pb-2 snap-x snap-mandatory">
+              {recommendationsQuery.data.map((item) => (
+                <button
+                  key={item.content_id}
+                  type="button"
+                  onClick={() => handleRecommendationClick(item)}
+                  className="flex-shrink-0 w-32 snap-start text-left group"
+                >
+                  <div className="w-32 h-48 rounded-xl overflow-hidden bg-muted/50 border border-white/10 mb-2">
+                    {item.poster_path ? (
+                      <img
+                        src={`${TMDB_IMAGE_BASE}${item.poster_path}`}
+                        alt={item.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Film className="w-8 h-8 text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
+                  <p className="text-sm font-medium truncate">{item.title}</p>
+                  {item.release_year && (
+                    <p className="text-xs text-muted-foreground">{item.release_year}</p>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </motion.div>
 
       {/* Модальное окно входа */}

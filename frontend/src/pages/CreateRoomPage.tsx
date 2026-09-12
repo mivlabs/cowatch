@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Film, Users, Lock, Search, X } from 'lucide-react';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -21,11 +21,24 @@ export function CreateRoomPage() {
   const [maxParticipants, setMaxParticipants] = useState(10);
   const [isPrivate, setIsPrivate] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
 
   // --- Поиск по каталогу ---
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [selectedContent, setSelectedContent] = useState<CatalogItem | null>(null);
+
+  // Фильм может прийти уже выбранным с главной страницы (клик по карточке
+  // в блоке "Рекомендуем", см. HomePage.tsx) — тогда ведём себя так, будто
+  // его только что нашли через тот же поиск по каталогу, без повторного ввода.
+  useEffect(() => {
+    const preselected = (location.state as { preselected?: CatalogItem } | null)?.preselected;
+    if (preselected) {
+      setSelectedContent(preselected);
+      setQuery(preselected.title);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Простой дебаунс без библиотек: ждём 300мс тишины после последней
   // буквы, прежде чем реально бить в API. Без этого — запрос на каждое

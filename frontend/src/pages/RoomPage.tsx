@@ -88,6 +88,33 @@ export function RoomPage() {
     }
   }, [messages]);
 
+  // video_changed приходит по WS всем участникам комнаты (не только хосту,
+  // который уже обновил свой кэш оптимистично). Без этого гости видели бы
+  // новое видео/название только после ручного рефреша страницы.
+  useEffect(() => {
+    const lastVideoChanged = [...videoEvents].reverse().find((e) => e.type === 'video_changed');
+    if (!lastVideoChanged) return;
+
+    queryClient.setQueryData(['room', code], (oldData: any) => {
+      if (!oldData) return oldData;
+      const rawTitle = lastVideoChanged.title?.trim();
+      const nextTitle = rawTitle ? `${oldData.title} — ${rawTitle}` : oldData.title;
+      if (
+        oldData.current_movie_url === lastVideoChanged.url &&
+        oldData.current_movie_title === nextTitle
+      ) {
+        return oldData;
+      }
+      return {
+        ...oldData,
+        current_movie_url: lastVideoChanged.url,
+        current_movie_title: nextTitle,
+        current_position: 0,
+        is_playing: false,
+      };
+    });
+  }, [videoEvents, code, queryClient]);
+
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
@@ -236,11 +263,19 @@ export function RoomPage() {
               setIsSubmitting(false);
               return;
             }
+            const manualTitle = (formData.get('videoTitle') as string)?.trim() || '';
+            const title = selectedMovie?.title || manualTitle || undefined;
             try {
-              await api.patch(`/rooms/${code}/video`, { url: url.trim() });
+              await api.patch(`/rooms/${code}/video`, { url: url.trim(), title });
               queryClient.setQueryData(['room', code], (oldData: any) => {
                 if (!oldData) return oldData;
-                return { ...oldData, current_movie_url: url.trim(), current_position: 0, is_playing: false };
+                return {
+                  ...oldData,
+                  current_movie_url: url.trim(),
+                  current_movie_title: title ? `${oldData.title} — ${title}` : oldData.title,
+                  current_position: 0,
+                  is_playing: false,
+                };
               });
               (e.target as HTMLFormElement).reset();
             } catch (err) {
@@ -259,6 +294,15 @@ export function RoomPage() {
             placeholder="Ссылка на YouTube или Rutube..."
             className="flex-1 min-w-0 px-3 py-2 bg-background border border-white/10 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-primary"
           />
+          {!selectedMovie && (
+            <input
+              name="videoTitle"
+              type="text"
+              maxLength={90}
+              placeholder="Название фильма (необязательно)"
+              className="flex-1 min-w-0 px-3 py-2 bg-background border border-white/10 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          )}
           <button
             type="submit"
             disabled={isSubmitting}

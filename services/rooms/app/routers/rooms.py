@@ -192,19 +192,21 @@ async def update_room_video(
         raise HTTPException(status_code=403, detail="Only host can change video")
     
     url = data.get("url", "")
-    title = data.get("title")
-    
+    title = (data.get("title") or "").strip()
+    MAX_TITLE_LEN = 90  # room.title до 100 + " — " + это <= 200 (лимит колонки current_movie_title)
+    if len(title) > MAX_TITLE_LEN:
+        title = title[:MAX_TITLE_LEN].rstrip()
+
     room.current_movie_url = url if url.strip() else None
-    if title:
-        room.current_movie_title = title
+    room.current_movie_title = f"{room.title} — {title}" if title else room.title
     room.current_position = 0
     room.is_playing = False
-    
+
     await db.commit()
     await db.refresh(room)
-    
+
     await redis_client.delete(_video_state_key(code))
-    
+
     await redis_client.publish(f"room:events:{code}", json.dumps({
         "type": "video_changed",
         "url": url,

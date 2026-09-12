@@ -16,6 +16,7 @@ X-Internal-Secret и должен совпадать со значением INT
 Теперь сервис явно падает при старте, если секрет не задан — это должно
 быть жёстко видно при деплое, а не тихо дырявить прод.
 """
+import hmac
 import os
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
@@ -40,7 +41,13 @@ router = APIRouter(prefix="/internal", tags=["Internal"])
 
 
 def verify_internal_secret(x_internal_secret: str = Header(default="")) -> None:
-    if x_internal_secret != INTERNAL_API_SECRET:
+    # Header(default="") гарантирует str, а не None, даже когда заголовок
+    # отсутствует — compare_digest требует одинаковый тип у обоих аргументов.
+    # Обычное `!=` тут не годится: этот эндпоинт достижим с публичного порта
+    # auth без gateway перед собой (см. docstring модуля), а сравнение строк
+    # по символам до первого несовпадения — классическая timing-атака,
+    # позволяющая подбирать секрет байт за байтом по времени ответа.
+    if not hmac.compare_digest(x_internal_secret, INTERNAL_API_SECRET):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid internal secret",

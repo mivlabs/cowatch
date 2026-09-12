@@ -18,6 +18,7 @@ import logging
 from dataclasses import dataclass
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.achievement import Achievement, UserAchievement, WatchHistory
@@ -86,8 +87,19 @@ class GrantResult:
 
 
 async def grant_achievement(db: AsyncSession, user_id: int, achievement_title: str) -> GrantResult:
-    """Идемпотентно выдаёт ачивку. Повторный вызов с тем же user_id+achievement_title
-    не создаёт вторую запись UserAchievement."""
+    """Атомарно и идемпотентно выдаёт ачивку одним UPSERT'ом.
+
+    notifications держит prefetch_count=10 — до 10 событий обрабатываются
+    параллельно, в том числе два события для одного user_id почти одновременно
+    (например два video.watch_completed из разных комнат). Раньше тут было
+    SELECT UserAchievement -> если пусто -> INSERT (read-modify-write без
+    блокировки в Python) — та же болезнь, что была в counters.increment():
+    оба конкурентных таска могли пройти проверку "уже выдано?" до того, как
+    любой из них закоммитится, и создать дубликат строки. UniqueConstraint
+    ("user_id", "achievement_id") в модели UserAchievement + INSERT ... ON
+    CONFLICT DO NOTHING делают идемпотентность гарантией на уровне БД, а не
+    везением в чередовании корутин.
+    """
     user = await db.get(User, user_id)
     if user is None:
         logger.info("Пропускаю выдачу '%s' для user_id=%s: пользователь не найден (гость?)",
@@ -102,17 +114,18 @@ async def grant_achievement(db: AsyncSession, user_id: int, achievement_title: s
         logger.error("Ачивка '%s' не заведена как seed-запись", achievement_title)
         return GrantResult(granted=False, reason="unknown_achievement")
 
-    existing_result = await db.execute(
-        select(UserAchievement).where(
-            UserAchievement.user_id == user_id,
-            UserAchievement.achievement_id == achievement.id,
-        )
+    stmt = (
+        pg_insert(UserAchievement)
+        .values(user_id=user_id, achievement_id=achievement.id)
+        .on_conflict_do_nothing(index_elements=["user_id", "achievement_id"])
+        .returning(UserAchievement.id)
     )
-    if existing_result.scalar_one_or_none() is not None:
+    result = await db.execute(stmt)
+    await db.commit()
+
+    if result.scalar_one_or_none() is None:
         return GrantResult(granted=False, reason="already_granted")
 
-    db.add(UserAchievement(user_id=user_id, achievement_id=achievement.id))
-    await db.commit()
     logger.info("Пользователь %s получил ачивку '%s'", user_id, achievement_title)
     return GrantResult(granted=True)
 

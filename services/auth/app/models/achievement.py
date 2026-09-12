@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -16,6 +16,14 @@ class Achievement(Base):
 
 class UserAchievement(Base):
     __tablename__ = "user_achievements"
+    __table_args__ = (
+        # grant_achievement() полагается на этот констрейнт для атомарного
+        # INSERT ... ON CONFLICT DO NOTHING — без него параллельные события
+        # (consumer в notifications держит prefetch_count=10, до 10 событий
+        # обрабатываются одновременно) могли пройти проверку "уже выдано?"
+        # до того, как любое из них закоммитится, и создать дубликат.
+        UniqueConstraint("user_id", "achievement_id", name="uq_user_achievement"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)

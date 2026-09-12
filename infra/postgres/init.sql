@@ -8,3 +8,5 @@
 CREATE DATABASE auth_db;
 CREATE DATABASE messages_db;
 CREATE DATABASE rooms_db;
+CREATE DATABASE recommendations_db;
+CREATE DATABASE notifications_db;

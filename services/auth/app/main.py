@@ -4,8 +4,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.database import engine, Base
-from app.routers import auth
+from app.database import engine, Base, async_session
+from app.routers import auth, internal
+from app.services.achievement_service import seed_achievements
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("uvicorn.error")
@@ -28,6 +29,11 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     logger.info("✅ [AUTH] База данных готова!")
+
+    async with async_session() as db:
+        await seed_achievements(db)
+    logger.info("✅ [AUTH] Seed-ачивки на месте!")
+
     yield
     logger.info("🛑 [AUTH] Остановка приложения...")
     await engine.dispose()
@@ -50,6 +56,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
+app.include_router(internal.router)
 
 @app.get("/health")
 async def health_check():

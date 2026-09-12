@@ -1,12 +1,15 @@
 import json
 import os
 import asyncio
+from datetime import datetime
 from fastapi import APIRouter, HTTPException, status, WebSocket, WebSocketDisconnect, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 import redis.asyncio as aioredis
 
-from app.database import get_db
+from app.database import get_db, async_session
 from app.schemas.room import RoomCreate, RoomResponse, JoinRoomResponse
+from app.models.room import Room
 from app.services.room_service import (
     create_room,
     get_room_by_code,
@@ -15,6 +18,7 @@ from app.services.room_service import (
 )
 from app.core.security import get_user_id_from_token, get_user_email_from_token
 from app.core.dependencies import get_current_user
+from app.events import publish_event
 
 router = APIRouter(prefix="/rooms", tags=["Rooms"])
 
@@ -44,6 +48,13 @@ async def _persist_video_state(code: str, payload: dict) -> None:
         "timestamp": payload.get("timestamp") or __import__("datetime").datetime.utcnow().isoformat(),
     }
     await redis_client.set(_video_state_key(code), json.dumps(state))
+
+
+async def _fetch_room_safe(code: str) -> Room | None:
+    """Как get_room_by_code, но без 404 — для использования вне HTTP-запроса (в вебсокете)."""
+    async with async_session() as db:
+        result = await db.execute(select(Room).where(Room.code == code))
+        return result.scalar_one_or_none()
 
 
 async def _get_video_state(code: str) -> dict | None:
@@ -273,12 +284,53 @@ async def room_websocket(websocket: WebSocket, code: str):
 
         listener = asyncio.create_task(listen_redis())
 
+        # Трекинг времени просмотра этим конкретным пользователем в этой комнате.
+        # Раньше состояние воспроизведения было только общим для комнаты (в Redis),
+        # без привязки к тому, кто и сколько именно смотрел — video.watch_completed
+        # ниже закрывает именно этот пробел.
+        watch_started_at: datetime | None = None
+        watched_seconds = 0.0
+
+        def _start_watch_timer() -> None:
+            nonlocal watch_started_at
+            if watch_started_at is None:
+                watch_started_at = datetime.utcnow()
+
+        def _stop_watch_timer() -> None:
+            nonlocal watch_started_at, watched_seconds
+            if watch_started_at is not None:
+                watched_seconds += (datetime.utcnow() - watch_started_at).total_seconds()
+                watch_started_at = None
+
+        async def _flush_watch_completed() -> None:
+            nonlocal watched_seconds
+            _stop_watch_timer()
+            if watched_seconds <= 0 or user_id == 0:
+                watched_seconds = 0.0
+                return
+            room = await _fetch_room_safe(code)
+            await publish_event("video.watch_completed", user_id, {
+                "room_id": str(room.id) if room else None,
+                "room_code": code,
+                "content_id": getattr(room, "content_id", None) if room else None,
+                "content_title": getattr(room, "current_movie_title", None) if room else None,
+                "duration_seconds": watched_seconds,
+            })
+            watched_seconds = 0.0
+
         while True:
             try:
                 data = await websocket.receive_text()
                 try:
                     payload = json.loads(data)
+                    event_type = payload.get("type")
                     await _persist_video_state(code, payload)
+                    if event_type == "video_play":
+                        _start_watch_timer()
+                    elif event_type == "video_pause":
+                        _stop_watch_timer()
+                    elif event_type == "video_end":
+                        await _flush_watch_completed()
                 except json.JSONDecodeError:
                     pass
                 await redis_client.publish(channel_name, data)
@@ -292,17 +344,23 @@ async def room_websocket(websocket: WebSocket, code: str):
         print(f"💥 [WS] КРИТИЧЕСКАЯ ОШИБКА: {e}")
     finally:
         print(f"🧹 [WS] Очистка для {code}")
-        
+
+        if 'listener' in locals():
+            try:
+                await _flush_watch_completed()
+            except Exception as e:
+                print(f"⚠️ [WS] Не удалось зафиксировать просмотр: {e}")
+
         current_count = await redis_client.decr(f"room:participants:{code}")
         if current_count < 0:
             await redis_client.set(f"room:participants:{code}", 0)
-        
+
         if is_host:
             await redis_client.delete(f"room:host:{code}")
             print(f"👑 [WS] Хост отключился, флаг очищен")
-        
+
         print(f"👥 [WS] Осталось участников: {max(0, current_count)}")
-        
+
         await pubsub.unsubscribe(channel_name)
         await pubsub.close()
         if 'listener' in locals():

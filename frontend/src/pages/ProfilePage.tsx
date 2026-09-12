@@ -169,10 +169,17 @@ export function ProfilePage() {
                 <Calendar className="w-4 h-4 text-purple-400" />
                 Добро пожаловать в CoWatch!
               </h3>
-              <p className="text-muted-foreground text-sm">
-                Ты уже посмотрел <strong>{profile.total_movies}</strong> фильмов и провел за просмотром <strong>{profile.total_hours.toFixed(1)} часов</strong>. 
-                Продолжай смотреть с друзьями, чтобы разблокировать новые достижения!
-              </p>
+              {user.isGuest ? (
+                <p className="text-muted-foreground text-sm">
+                  Для гостевого входа статистика и история просмотров не ведутся — сервер
+                  их не считает. Зарегистрируйся, чтобы фильмы, часы и ачивки начали копиться.
+                </p>
+              ) : (
+                <p className="text-muted-foreground text-sm">
+                  Ты уже посмотрел <strong>{profile.total_movies}</strong> фильмов и провел за просмотром <strong>{profile.total_hours.toFixed(1)} часов</strong>.
+                  Продолжай смотреть с друзьями, чтобы разблокировать новые достижения!
+                </p>
+              )}
             </div>
           </div>
         )}
@@ -209,7 +216,21 @@ export function ProfilePage() {
             {profile.achievements.length === 0 ? (
               <div className="col-span-full text-center py-12 text-muted-foreground">
                 <Trophy className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                <p>У тебя пока нет ачивок. Зарегистрируйся или посмотри первый фильм!</p>
+                {user.isGuest ? (
+                  <p>
+                    Ачивки доступны только зарегистрированным пользователям — гостевой
+                    просмотр в статистику не идёт.{' '}
+                    <button
+                      onClick={() => navigate('/')}
+                      className="text-primary underline underline-offset-2 hover:no-underline"
+                    >
+                      Зарегистрируйся
+                    </button>
+                    , чтобы начать их получать.
+                  </p>
+                ) : (
+                  <p>У тебя пока нет ачивок. Создай комнату или посмотри первый фильм!</p>
+                )}
               </div>
             ) : (
               profile.achievements.map((ach) => (

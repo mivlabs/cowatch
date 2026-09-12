@@ -28,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [auth, rooms, messages, recommendations]
+        service: [auth, rooms, messages, notifications, recommendations]
     services:
       postgres:
         image: postgres:16-alpine
@@ -52,12 +52,23 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      rabbitmq:
+        image: rabbitmq:3-management-alpine
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 10s
+          --health-timeout 10s
+          --health-retries 5
     env:
       TEST_AUTH_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/auth_test
       TEST_ROOMS_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/rooms_test
       TEST_MESSAGES_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/messages_test
+      TEST_NOTIFICATIONS_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/notifications_test
       TEST_RECOMMENDATIONS_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/recommendations_test
       TEST_REDIS_URL: redis://localhost:6379/13
+      TEST_RABBITMQ_URL: amqp://guest:guest@localhost:5672/
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -68,11 +79,15 @@ jobs:
           PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c "CREATE DATABASE auth_test;"
           PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c "CREATE DATABASE rooms_test;"
           PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c "CREATE DATABASE messages_test;"
+          PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c "CREATE DATABASE notifications_test;"
           PGPASSWORD=postgres psql -h localhost -U postgres -d postgres -c "CREATE DATABASE recommendations_test;"
       - name: Install dependencies
         run: |
           pip install -r services/${{ matrix.service }}/requirements.txt
           pip install -r requirements-dev.txt
+      - name: Install auth dependencies (needed by notifications integration tests)
+        if: matrix.service == 'notifications'
+        run: pip install -r services/auth/requirements.txt
       - name: Run tests
         run: ./scripts/test.sh ${{ matrix.service }}
 

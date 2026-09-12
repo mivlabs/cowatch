@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 
 from app.models.room import Room, Participant
 from app.schemas.room import RoomCreate
+from app.events import publish_event
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/3")
 redis_client = aioredis.from_url(REDIS_URL, decode_responses=True)
@@ -36,6 +37,14 @@ async def create_room(db: AsyncSession, room_in: RoomCreate, user_id: int) -> Ro
     db.add(host_participant)
     await db.commit()
     await db.refresh(room)
+
+    await publish_event("room.created", user_id, {
+        "room_id": str(room.id),
+        "room_code": room.code,
+        "title": room.title,
+        "content_id": room.content_id,
+    })
+
     return room
 
 
@@ -98,6 +107,15 @@ async def join_room(db: AsyncSession, code: str, user_id: int) -> dict:
         f"room:{room.id}:events",
         json.dumps({"type": "user_joined", "user_id": user_id})
     )
+
+    new_count = current_count + 1
+    await publish_event("room.joined", user_id, {
+        "room_id": str(room.id),
+        "room_code": room.code,
+        "host_id": room.host_id,
+        "participants_count": new_count,
+        "max_participants": room.max_participants,
+    })
 
     return {"room": room, "user_role": "guest"}
 

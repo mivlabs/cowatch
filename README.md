@@ -42,6 +42,7 @@
 | **Регистрация** | Email, пароль, JWT |
 | **Комнаты** | Приватные комнаты по коду, до 50 участников |
 | **Real-time** | Redis Pub/Sub для рассылки событий |
+| **Ачивки и история просмотра** | Кросс-сервисные события в RabbitMQ (создание/вход в комнату, сообщения, законченный просмотр) → notifications считает пороги и выдаёт ачивки через auth |
 
 ---
 
@@ -58,6 +59,9 @@
 ## Архитектура
 
 Бэкенд разбит на микросервисы. События в комнатах (чат, видео, реакции) идут через WebSocket и Redis Pub/Sub.
+Кросс-сервисная система ачивок работает отдельно, через события в RabbitMQ: rooms и messages публикуют
+доменные события (создание комнаты, вход в комнату, отправленное сообщение, законченный просмотр),
+notifications их слушает, проверяет условия ачивок и выдаёт их через внутренний HTTP-эндпоинт auth.
 
 ```mermaid
 flowchart TB
@@ -70,12 +74,13 @@ flowchart TB
         AUTH["Auth Service :8001"]
         ROOMS["Rooms Service :8003"]
         MSG["Messages Service :8002"]
+        NOTIF["Notifications Service :8004"]
     end
 
     subgraph Infra["Инфраструктура"]
         PG[(PostgreSQL 16)]
         REDIS[(Redis 7)]
-        RMQ[(RabbitMQ 3)]
+        RMQ[(RabbitMQ 3 — cowatch.events)]
     end
 
     UI --> AUTH
@@ -86,6 +91,11 @@ flowchart TB
     ROOMS --> REDIS
     MSG --> PG
     MSG --> REDIS
+    ROOMS -->|"room.created / room.joined / video.watch_completed"| RMQ
+    MSG -->|"message.sent"| RMQ
+    RMQ --> NOTIF
+    NOTIF -->|"POST /internal/achievements/grant, /internal/history/record"| AUTH
+    NOTIF --> PG
 ```
 
 ### Стек
@@ -93,6 +103,10 @@ flowchart TB
 **Frontend:** React 19, TypeScript, Vite, Tailwind CSS, Framer Motion, React Query, React Router, React Player
 
 **Backend:** Python 3.11, FastAPI, SQLAlchemy 2.0 (async), PostgreSQL, Redis, JWT
+
+**События и ачивки:** RabbitMQ (topic exchange `cowatch.events`, aio-pika) — rooms/messages публикуют
+события, notifications их слушает и идемпотентно выдаёт ачивки через внутренний API auth
+(защищён общим секретом `INTERNAL_API_SECRET`, не JWT)
 
 **Инфра:** Docker Compose
 
@@ -112,8 +126,8 @@ cd cowatch
 ### 2. Запустить сервисы
 
 ```bash
-docker-compose up -d postgres redis
-docker-compose up -d auth rooms
+docker-compose up -d postgres redis rabbitmq
+docker-compose up -d auth rooms messages notifications
 ```
 
 Проверка:
@@ -121,6 +135,7 @@ docker-compose up -d auth rooms
 ```bash
 curl http://localhost:8001/health
 curl http://localhost:8003/health
+curl http://localhost:8004/health
 ```
 
 ### 3. Запустить фронтенд
@@ -151,20 +166,22 @@ VITE_WS_URL=ws://localhost:8003
 cowatch/
 ├── frontend/           # React SPA
 ├── services/
-│   ├── auth/          # Регистрация, логин, гостевой JWT
-│   ├── rooms/         # Комнаты, WebSocket, синхронизация видео
-│   ├── messages/      # Сервис сообщений
-│   ├── gateway/       # WIP: единая точка входа, ещё не реализован
-│   └── notifications/ # WIP: email/push, ещё не реализован
-├── tests/              # pytest для auth/rooms/messages
+│   ├── auth/          # Регистрация, логин, гостевой JWT, ачивки, watch-history
+│   ├── rooms/         # Комнаты, WebSocket, синхронизация видео, события в RabbitMQ
+│   ├── messages/      # Сервис сообщений, события в RabbitMQ
+│   ├── notifications/ # Слушает cowatch.events, выдаёт ачивки через internal API auth
+│   └── gateway/       # WIP: единая точка входа, ещё не реализован
+├── tests/              # pytest для auth/rooms/messages/notifications
 ├── infra/postgres/     # init-скрипт БД для docker-compose
 ├── docker-compose.yml
 └── README.md
 ```
 
-> `gateway` и `notifications` пока присутствуют в `docker-compose.yml` как заготовки
-> (папки, Dockerfile, пустой `app/main.py`) — реальный трафик через них не идёт,
-> фронтенд ходит в `auth`/`rooms`/`messages` напрямую по портам 8001–8002/8003.
+> `gateway` пока присутствует в `docker-compose.yml` как заготовка (папка, Dockerfile,
+> пустой `app/main.py`) — реальный трафик через него не идёт, фронтенд ходит в
+> `auth`/`rooms`/`messages` напрямую по портам 8001–8003. `notifications` (порт 8004)
+> с ачивками уже боевой — просто у него нет собственного публичного REST API, кроме
+> `/health`: он только слушает RabbitMQ и зовёт auth.
 
 ---
 
@@ -180,14 +197,36 @@ cowatch/
 | `POST` | `/rooms/{code}/join` | Присоединиться к комнате |
 | `PATCH` | `/rooms/{code}/video` | Сменить видео (только хост) |
 | `WS` | `/rooms/ws/{code}?token=…` | Чат, видео-события, реакции |
+| `GET` | `/auth/profile/{user_id}` | Ачивки, история просмотра, total_movies/total_hours |
+| `POST` | `/internal/achievements/grant` | Только для notifications, секрет `X-Internal-Secret` |
+| `POST` | `/internal/history/record` | Только для notifications, секрет `X-Internal-Secret` |
 
-Типы WebSocket-событий: `chat_message`, `video_play`, `video_pause`, `video_seek`, `video_changed`, `video_reaction`, `connected`, `system`.
+Типы WebSocket-событий: `chat_message`, `video_play`, `video_pause`, `video_seek`, `video_end`, `video_changed`, `video_reaction`, `connected`, `system`.
+`video_play`/`video_pause`/`video_end` также используются rooms для трекинга личного времени просмотра
+(per user, per room) — по ним считается `video.watch_completed`.
+
+### Ачивки
+
+| Ачивка | Условие |
+|---|---|
+| Первый шаг | Регистрация |
+| Хозяин вечеринки | Создание первой комнаты |
+| Душа компании | Присоединение к 5 разным комнатам |
+| Полный кинозал | Комната набрала максимум участников |
+| Болтун | 100 отправленных сообщений (суммарно) |
+| Первый киносеанс | Один законченный просмотр (`video_end`) |
+| Марафонец | 10+ часов просмотра суммарно |
+
+Гости (`/auth/guest`) не получают ачивки и историю — у них нет строки в таблице `users`
+(`UserAchievement`/`WatchHistory` ссылаются на `users.id` через FK), так что
+`/internal/*` эндпоинты тихо игнорируют неизвестный `user_id`. Это осознанное решение,
+а не забытый баг — см. `services/auth/app/services/achievement_service.py`.
 
 ---
 
 ## Планы
 
-- Личный кабинет с достижениями и историей просмотра
+- Личный кабинет на фронтенде для ачивок и истории просмотра (бэкенд уже отдаёт `/auth/profile/{user_id}`)
 - Публичные комнаты
 - Поиск фильмов и сериалов прямо в интерфейсе
 - Мобильная версия сайта или отдельное приложение
@@ -199,12 +238,12 @@ cowatch/
 
 ## Тестирование
 
-pytest гоняется отдельно на каждый сервис (`auth`, `rooms`, `messages` — все три
-называют свой корневой пакет `app`, поэтому им нужен разный `PYTHONPATH`; `scripts/test.sh`
-уже это учитывает). Нужны поднятые Postgres и Redis:
+pytest гоняется отдельно на каждый сервис (`auth`, `rooms`, `messages`, `notifications` —
+все называют свой корневой пакет `app`, поэтому им нужен разный `PYTHONPATH`;
+`scripts/test.sh` уже это учитывает). Нужны поднятые Postgres, Redis и RabbitMQ:
 
 ```bash
-docker-compose up -d postgres redis
+docker-compose up -d postgres redis rabbitmq
 
 pip install -r requirements-dev.txt
 pip install -r services/auth/requirements.txt      # для конкретного сервиса
@@ -215,7 +254,14 @@ pip install -r services/auth/requirements.txt      # для конкретног
 типа `UUID`, специфичная для диалекта postgresql, на sqlite такая таблица просто
 не создастся.
 
-CI (`.github/workflows/ci.yml`) поднимает postgres/redis как сервис-контейнеры и
+`notifications` тестируется против настоящего RabbitMQ, а не мока aio-pika: главный
+риск в системе ачивок — разъехавшиеся exchange/routing key/формат сообщения между
+publisher (rooms/messages) и consumer, и это именно то, что мок скрыл бы, а не поймал.
+Его тесты дополнительно поднимают auth как второе FastAPI-приложение в том же процессе
+(см. `tests/test_notifications/conftest.py`) и подменяют только транспорт HTTP-вызова
+в auth на `ASGITransport` — без реального сокета, но с настоящим запросом/ответом.
+
+CI (`.github/workflows/ci.yml`) поднимает postgres/redis/rabbitmq как сервис-контейнеры и
 гоняет тот же `scripts/test.sh` по каждому сервису в матрице, плюс `ruff check` и
 сборку фронтенда.
 

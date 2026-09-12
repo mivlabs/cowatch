@@ -32,6 +32,7 @@ os.environ.setdefault(
     ),
 )
 os.environ.setdefault("JWT_SECRET", "test-secret-do-not-use-in-prod")
+os.environ.setdefault("INTERNAL_API_SECRET", "test-internal-secret")
 
 for _mod in [m for m in sys.modules if m == "app" or m.startswith("app.")]:
     del sys.modules[_mod]
@@ -39,16 +40,25 @@ if str(SERVICE_ROOT) in sys.path:
     sys.path.remove(str(SERVICE_ROOT))
 sys.path.insert(0, str(SERVICE_ROOT))
 
-from app.database import Base, engine  # noqa: E402
+from app.database import Base, engine, async_session  # noqa: E402
 from app.main import app  # noqa: E402
+from app.services.achievement_service import seed_achievements  # noqa: E402
 
 
 @pytest_asyncio.fixture(autouse=True)
 async def _clean_database():
-    """Свежие таблицы на каждый тест — просто и надёжно для такого объёма тестов."""
+    """Свежие таблицы на каждый тест — просто и надёжно для такого объёма тестов.
+
+    В проде seed_achievements вызывается один раз в lifespan (app/main.py),
+    но httpx.ASGITransport, которым тут пользуется фикстура `client`, не
+    гоняет lifespan-события вообще — поэтому сидинг ачивок здесь приходится
+    повторять на каждый тест вручную, вслед за drop_all/create_all.
+    """
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+    async with async_session() as db:
+        await seed_achievements(db)
     yield
     # pytest-asyncio даёт каждому тесту свой event loop, а engine — общий на
     # процесс: без dispose() его пул пытается переиспользовать asyncpg-соединение,

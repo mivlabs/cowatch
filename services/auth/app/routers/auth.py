@@ -8,6 +8,8 @@ from datetime import datetime
 from typing import List, Optional
 
 from app.database import get_db
+from app.models.achievement import Achievement, UserAchievement, WatchHistory
+from app.models.user import User
 from app.schemas.user import UserCreate, UserLogin, Token, UserResponse
 from app.services.auth import (
     get_user_by_email,
@@ -16,6 +18,7 @@ from app.services.auth import (
     create_access_token,
     create_refresh_token,
 )
+from app.services.achievement_service import grant_achievement
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +39,7 @@ class HistoryResponse(BaseModel):
     id: int
     movie_title: str
     movie_url: str
+    duration_minutes: int
     watched_at: datetime
     model_config = {"from_attributes": True}
 
@@ -61,31 +65,7 @@ async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
         )
     
     new_user = await create_user(db, user_in)
-    from app.models.achievement import Achievement, UserAchievement 
-    
-    first_step_achievement = await db.execute(
-        select(Achievement).where(Achievement.title == "Первый шаг")
-    )
-    first_step_achievement = first_step_achievement.scalar_one_or_none()
-    
-    if not first_step_achievement:
-        first_step_achievement = Achievement(
-            title="Первый шаг",
-            description="Зарегистрируйся в CoWatch",
-            icon="🎬"
-        )
-        db.add(first_step_achievement)
-        await db.commit()
-        await db.refresh(first_step_achievement)
-
-    user_achievement = UserAchievement(
-        user_id=new_user.id,
-        achievement_id=first_step_achievement.id
-    )
-    db.add(user_achievement)
-    await db.commit()
-    
-    logger.info(f"User {new_user.email} получил ачивку 'Первый шаг'!")
+    await grant_achievement(db, new_user.id, "Первый шаг")
     return new_user
 
 @router.post("/login", response_model=Token)
@@ -111,6 +91,12 @@ async def login(user_in: UserLogin, db: AsyncSession = Depends(get_db)):
 
 @router.post("/guest", response_model=Token)
 async def login_as_guest(username: str = Query(..., min_length=2, max_length=20)):
+    # Гости не получают ачивки и watch-history: у них нет строки в таблице
+    # users (guest_id — случайное число, не первичный ключ), а UserAchievement
+    # и WatchHistory ссылаются на users.id через FK. Это осознанное решение,
+    # а не забытый баг — см. docstring achievement_service.py. grant_achievement
+    # и record_watch_history тихо игнорируют неизвестные user_id именно из-за
+    # гостевых токенов вроде этого.
     guest_id = random.randint(100000, 999999)
     access_token = create_access_token(data={"sub": f"guest_{username}", "user_id": guest_id})
     return Token(access_token=access_token, refresh_token="guest_session")
@@ -118,9 +104,6 @@ async def login_as_guest(username: str = Query(..., min_length=2, max_length=20)
 # 🔥 ИСПРАВЛЕННЫЙ ЭНДПОИНТ ПРОФИЛЯ (Работает и для гостей, и без ошибки username)
 @router.get("/profile/{user_id}", response_model=ProfileStatsResponse)
 async def get_profile_stats(user_id: int, db: AsyncSession = Depends(get_db)):
-    from app.models.achievement import UserAchievement, Achievement, WatchHistory
-    from app.models.user import User 
-    
     # 1. Пытаемся получить пользователя из БД
     user = await db.get(User, user_id)
     
@@ -165,9 +148,11 @@ async def get_profile_stats(user_id: int, db: AsyncSession = Depends(get_db)):
     )
     history = history_query.scalars().all()
 
-    # 6. Считаем статистику
+    # 6. Считаем статистику из реальных данных (duration_minutes приходит из
+    # video.watch_completed через /internal/history/record) — раньше тут был
+    # захардкоженный total_movies * 2.0, ничего общего с фактическим просмотром.
     total_movies = len(history)
-    total_hours = total_movies * 2.0 
+    total_hours = round(sum(h.duration_minutes for h in history) / 60, 2)
 
     return ProfileStatsResponse(
         username=display_name,

@@ -31,4 +31,8 @@ class WatchHistory(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     movie_title = Column(String, nullable=False)
     movie_url = Column(String, nullable=False)
+    # Реальная длительность просмотра (video.watch_completed из rooms), в минутах.
+    # Раньше эта таблица никогда не заполнялась, а total_hours в /profile
+    # считался как total_movies * 2.0 — теперь считаем из фактических данных.
+    duration_minutes = Column(Integer, nullable=False, default=0)
     watched_at = Column(DateTime(timezone=True), server_default=func.now())

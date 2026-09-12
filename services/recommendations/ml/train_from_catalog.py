@@ -72,7 +72,14 @@ async def load_from_catalog_db(database_url: str) -> tuple[pd.DataFrame, pd.Data
 
     content_df = pd.DataFrame(
         [
-            {"content_id": c.id, "title": c.title, "genres": c.genres or [], "overview": c.overview or ""}
+            {
+                "content_id": c.id,
+                "title": c.title,
+                "genres": c.genres or [],
+                "overview": c.overview or "",
+                "poster_path": c.poster_path,
+                "release_year": c.release_year,
+            }
             for c in content_rows
         ]
     )

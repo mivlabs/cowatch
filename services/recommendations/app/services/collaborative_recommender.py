@@ -155,12 +155,18 @@ class CollaborativeRecommender:
 
     def _as_item(self, content_id: int, score: float, reason: str) -> dict:
         row = self._content_df.iloc[self._content_id_to_idx[content_id]]
+        release_year = row.get("release_year")
         return {
             "content_id": int(content_id),
             "title": row["title"],
             "genres": row["genres"] if isinstance(row["genres"], list) else [],
             "score": round(score, 4),
             "reason": reason,
+            # .get() — content_df здесь обучается на MovieLens (train_collaborative.py),
+            # этих колонок нет; оставлено для совместимости формата ответа с
+            # ContentRecommender._as_item(), CF на реальном каталоге не деплоится.
+            "poster_path": row.get("poster_path") or None,
+            "release_year": None if pd.isna(release_year) else int(release_year),
         }
 
     def evaluate_leave_one_out(self, interactions_df: pd.DataFrame, k: int = 10) -> EvalMetrics:

@@ -1,6 +1,6 @@
 {
-  "model_version": "catalog-20260911T152912Z",
-  "trained_at": "2026-09-11T15:29:12.810352+00:00",
+  "model_version": "catalog-20260912T082129Z",
+  "trained_at": "2026-09-12T08:21:29.981281+00:00",
   "n_items": 181,
   "n_users": 3,
   "n_interactions": 3,

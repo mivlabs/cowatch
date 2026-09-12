@@ -10,6 +10,8 @@ class RecommendedItem(BaseModel):
     genres: list[str] = []
     score: float
     reason: str  # "personalized" | "popular_fallback" | "similar_to"
+    poster_path: Optional[str] = None
+    release_year: Optional[int] = None
 
 
 class RecommendationsResponse(BaseModel):

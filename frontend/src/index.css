@@ -1,3 +1,4 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap");
 @import "tailwindcss";
 
 @theme {
@@ -7,11 +8,96 @@
   --color-primary-foreground: hsl(210 40% 98%);
   --color-muted: hsl(217.2 32.6% 17.5%);
   --color-muted-foreground: hsl(215 20.2% 65.1%);
+
+  /* --- Design tokens synced from Figma Variables (CoWatch landing/room/profile) --- */
+  --color-bg-base: #06060a;
+  --color-bg-surface: #0b0b12;
+  --color-bg-elevated: #13131d;
+  --color-border-subtle: #1d1d2b;
+
+  --color-text-primary: #f5f5fa;
+  --color-text-secondary: #b8b8cc;
+  --color-text-muted: #6e6e86;
+
+  --color-accent-violet: #7c3aed;
+  --color-accent-cyan: #4ce0d2;
+  --color-accent-magenta: #ff5fa8;
+  --color-brand-amber: #ffc168;
+
+  --color-chrome-highlight: #ffffff;
+  --color-chrome-mid: #b7bdd6;
+  --color-chrome-shadow: #3a3d52;
+
+  /*
+   * Spacing/radius scale (Figma "Spacing"/"Radius" collections), namespaced
+   * under `cw-` — Tailwind v4 unifies ALL sizing utilities (gap/padding/
+   * margin/width/max-width/etc AND border-radius) onto one shared
+   * `--spacing-*`/`--radius-*` theme scale that already ships with named
+   * sizes xs/sm/md/lg/xl/2xl/3xl/4xl/5xl. Naming these tokens the same way
+   * silently overwrote Tailwind's own built-ins (e.g. `max-w-5xl` became
+   * 128px instead of ~1024px, and every bare `rounded-lg`/`rounded-md`/
+   * `rounded-xl` across the whole app — not just the new pages — picked up
+   * these Figma radii instead of Tailwind's defaults). The `cw-` prefix
+   * keeps `gap-cw-md`, `p-cw-lg`, etc. available without clobbering
+   * anything Tailwind already defines.
+   */
+  --spacing-cw-xs: 4px;
+  --spacing-cw-sm: 8px;
+  --spacing-cw-md: 16px;
+  --spacing-cw-lg: 24px;
+  --spacing-cw-xl: 32px;
+  --spacing-cw-2xl: 48px;
+  --spacing-cw-3xl: 64px;
+  --spacing-cw-4xl: 96px;
+  --spacing-cw-5xl: 128px;
+
+  --radius-cw-sm: 8px;
+  --radius-cw-md: 16px;
+  --radius-cw-lg: 24px;
+  --radius-cw-xl: 32px;
 }
 
 body {
   background-color: var(--color-background);
   color: var(--color-foreground);
   -webkit-font-smoothing: antialiased;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  /*
+   * "Apple Color Emoji" first so macOS/iOS visitors get native Apple emoji
+   * glyphs for every 🎬🔗🍿 etc. across the app. Heads up: this is a
+   * best-effort, not a guarantee — Apple's emoji font/artwork is
+   * proprietary and can't be bundled or faked on Windows/Android/Linux,
+   * so those visitors still see their OS's own emoji set (Segoe UI Emoji,
+   * Noto Color Emoji, ...) no matter what font-family lists here. The only
+   * way to force pixel-identical Apple-style emoji on every OS would be to
+   * render them as images via a third-party emoji-image library — that's a
+   * separate, heavier change (new dependency, swaps every literal emoji
+   * character for an <img>) and hasn't been done here.
+   */
+  font-family: 'Inter', system-ui, -apple-system, 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
+}
+
+/*
+ * CSS approximation of the Figma "Iridescent Oil-Slick" WebGPU shader used
+ * behind Hero and CtaSection. The real shader only renders in the Figma
+ * canvas (WebGPU + an unshipped custom-effect runtime) — porting it verbatim
+ * would make the marketing hero depend on WebGPU support, which is still far
+ * from universal. Instead, AuroraBackground.tsx layers a handful of large,
+ * heavily-blurred color blobs (screen/lighten blend) that drift slowly past
+ * each other — the classic "breathing aurora" technique — which reads much
+ * closer to the shader's shifting-hue look than a single flat gradient did.
+ */
+@keyframes cw-blob-float-a {
+  0%, 100% { transform: translate(0%, 0%) scale(1); }
+  50% { transform: translate(8%, -10%) scale(1.12); }
+}
+
+@keyframes cw-blob-float-b {
+  0%, 100% { transform: translate(0%, 0%) scale(1); }
+  50% { transform: translate(-10%, 8%) scale(0.92); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cw-blob {
+    animation: none !important;
+  }
 }

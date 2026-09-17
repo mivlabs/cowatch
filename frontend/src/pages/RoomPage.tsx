@@ -1,15 +1,16 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Users, MessageSquare, Send, Copy, Wifi, WifiOff, Film } from 'lucide-react';
+import { Film } from 'lucide-react';
 import { useState, useRef, useEffect, useCallback } from 'react';
 
 import { api, recommendationsApi } from '@/lib/api';
 import type { Room } from '@/types/room';
 import { VideoPlayer } from '@/components/VideoPlayer';
 import { ReactionOverlay } from '@/components/ReactionOverlay';
-import { Avatar } from '@/components/Avatar';
 import { useAuth } from '@/contexts/AuthContext';
+import { RoomHeader } from '@/components/room/RoomHeader';
+import { MovieBanner } from '@/components/room/MovieBanner';
+import { ChatPanel } from '@/components/room/ChatPanel';
 import {
   useRoomWebSocket,
   type VideoReaction
@@ -166,10 +167,10 @@ export function RoomPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg-base)]">
         <div className="flex flex-col items-center gap-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-          <p className="text-muted-foreground">Загружаю комнату...</p>
+          <div className="size-12 animate-spin rounded-full border-b-2 border-[var(--color-accent-cyan)]" />
+          <p className="text-[var(--color-text-secondary)]">Загружаю комнату...</p>
         </div>
       </div>
     );
@@ -177,10 +178,13 @@ export function RoomPage() {
 
   if (error || !room) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-background p-4">
-        <h2 className="text-2xl font-bold mb-4 text-red-400">Комната не найдена</h2>
-        <p className="text-muted-foreground mb-6">Код "{code}" не существует</p>
-        <button onClick={() => navigate('/')} className="px-6 py-3 bg-primary rounded-xl font-semibold">
+      <div className="flex min-h-screen flex-col items-center justify-center bg-[var(--color-bg-base)] p-4">
+        <h2 className="mb-4 text-2xl font-bold text-red-400">Комната не найдена</h2>
+        <p className="mb-6 text-[var(--color-text-secondary)]">Код "{code}" не существует</p>
+        <button
+          onClick={() => navigate('/')}
+          className="rounded-xl bg-[var(--color-accent-cyan)] px-6 py-3 font-semibold text-white transition-opacity hover:opacity-90"
+        >
           На главную
         </button>
       </div>
@@ -190,66 +194,17 @@ export function RoomPage() {
   const videoUrl = room.current_movie_url || '';
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col">
-      <header className="border-b border-white/10 p-3 md:p-4 flex items-center justify-between bg-muted/30 backdrop-blur-md sticky top-0 z-40">
-        <div className="flex items-center gap-2 md:gap-4 min-w-0">
-          <button onClick={() => navigate('/')} className="p-2 hover:bg-white/10 rounded-lg transition-colors flex-shrink-0">
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <div className="min-w-0">
-            <h1 className="font-bold text-sm md:text-lg truncate">{room.title}</h1>
-            <div className="flex items-center gap-1 md:gap-2 text-xs md:text-sm text-muted-foreground">
-              <span className="font-mono truncate">{room.code}</span>
-              <button onClick={handleCopyCode} className="hover:text-primary transition-colors flex-shrink-0">
-                <Copy className="w-3 h-3" />
-              </button>
-              {isHost && (
-                <span className="px-1.5 md:px-2 py-0.5 bg-primary/20 text-primary rounded text-[10px] md:text-xs flex-shrink-0">Хост</span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 md:gap-3 flex-shrink-0">
-          <div className={`flex items-center gap-1 md:gap-1.5 px-2 md:px-3 py-1 md:py-1.5 rounded-full text-[10px] md:text-xs font-medium ${
-            isConnected ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
-          }`}>
-            {isConnected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
-            <span className="hidden sm:inline">{isConnected ? 'Online' : 'Offline'}</span>
-          </div>
-
-          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-primary/20 text-primary rounded-full text-sm font-medium">
-            <Users className="w-4 h-4" />
-            {room.participants_count} / {room.max_participants}
-          </div>
-        </div>
-      </header>
-
-      {isHost && selectedMovie && (
-        <div className="border-b border-white/10 px-3 md:px-4 py-2 bg-primary/10 flex items-center gap-3">
-          {selectedMovie.poster_path ? (
-            <img
-              src={`https://image.tmdb.org/t/p/w92${selectedMovie.poster_path}`}
-              alt={selectedMovie.title}
-              className="w-8 h-11 md:w-10 md:h-14 object-cover rounded flex-shrink-0"
-            />
-          ) : (
-            <div className="w-8 h-11 md:w-10 md:h-14 rounded bg-muted/40 flex items-center justify-center flex-shrink-0">
-              <Film className="w-4 h-4 text-muted-foreground" />
-            </div>
-          )}
-          <div className="min-w-0">
-            <p className="text-[10px] md:text-xs text-muted-foreground">Вы выбрали при создании комнаты</p>
-            <p className="text-sm md:text-base font-semibold truncate">
-              {selectedMovie.title}
-              {selectedMovie.release_year ? ` (${selectedMovie.release_year})` : ''}
-            </p>
-          </div>
-          <p className="hidden md:block text-xs text-muted-foreground ml-auto flex-shrink-0">
-            Вставьте ссылку на это видео ниже ↓
-          </p>
-        </div>
-      )}
+    <div className="flex min-h-screen flex-col bg-[var(--color-bg-base)] text-[var(--color-text-primary)]">
+      <RoomHeader
+        title={room.title}
+        code={room.code}
+        isHost={isHost}
+        isConnected={isConnected}
+        participantsCount={room.participants_count}
+        maxParticipants={room.max_participants}
+        onBack={() => navigate('/')}
+        onCopyCode={handleCopyCode}
+      />
 
       {isHost && (
         <form
@@ -285,14 +240,14 @@ export function RoomPage() {
               setIsSubmitting(false);
             }
           }}
-          className="border-b border-white/10 p-2 md:p-3 bg-muted/20 flex gap-2 items-center"
+          className="flex items-center gap-2 border-b border-[var(--color-border-subtle)] bg-white/[0.03] p-2.5 md:p-3"
         >
-          <span className="text-xs md:text-sm text-muted-foreground whitespace-nowrap">🎬</span>
+          <span className="whitespace-nowrap text-xs text-[var(--color-text-secondary)] md:text-sm">🎬</span>
           <input
             name="videoUrl"
             type="text"
             placeholder="Ссылка на YouTube или Rutube..."
-            className="flex-1 min-w-0 px-3 py-2 bg-background border border-white/10 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+            className="min-w-0 flex-1 rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-bg-elevated)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:ring-1 focus:ring-[var(--color-accent-cyan)]"
           />
           {!selectedMovie && (
             <input
@@ -300,103 +255,77 @@ export function RoomPage() {
               type="text"
               maxLength={90}
               placeholder="Название фильма (необязательно)"
-              className="flex-1 min-w-0 px-3 py-2 bg-background border border-white/10 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+              className="min-w-0 flex-1 rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-bg-elevated)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:ring-1 focus:ring-[var(--color-accent-cyan)]"
             />
           )}
           <button
             type="submit"
             disabled={isSubmitting}
-            className="px-3 md:px-4 py-2 bg-primary text-primary-foreground rounded-lg text-xs md:text-sm font-medium hover:bg-primary/90 transition-colors whitespace-nowrap disabled:opacity-50"
+            className="whitespace-nowrap rounded-lg bg-[var(--color-accent-cyan)] px-3 py-2 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50 md:px-4 md:text-sm"
           >
             {isSubmitting ? '...' : 'Загрузить'}
           </button>
         </form>
       )}
 
-      <main className="flex-1 flex flex-col lg:flex-row overflow-hidden">
-        <div className="flex-1 relative bg-black flex flex-col min-h-[240px] md:min-h-[400px] lg:min-h-0">
-          <VideoPlayer
-            url={videoUrl}
-            isHost={isHost}
-            videoEvents={videoEvents}
-            initialPosition={room.current_position}
-            initialIsPlaying={room.is_playing}
-            onPlay={handleVideoPlay}
-            onPause={handleVideoPause}
-            onSeek={handleVideoSeek}
-          />
-          <ReactionOverlay reactions={activeReactions} />
+      <main className="flex flex-1 flex-col overflow-hidden lg:flex-row">
+        <div className="flex min-h-[240px] flex-1 flex-col p-4 md:min-h-[400px] md:p-6 lg:min-h-0">
+          <div
+            className="relative flex flex-1 flex-col items-center justify-center overflow-hidden rounded-[20px] border-[1.5px] bg-[#050508]"
+            style={{
+              borderColor: 'rgba(76,224,210,0.9)',
+              boxShadow: '0px 20px 50px -12px rgba(0,0,0,0.5), 0px 0px 60px -6px rgba(76,224,210,0.22)',
+            }}
+          >
+            <VideoPlayer
+              url={videoUrl}
+              isHost={isHost}
+              videoEvents={videoEvents}
+              initialPosition={room.current_position}
+              initialIsPlaying={room.is_playing}
+              onPlay={handleVideoPlay}
+              onPause={handleVideoPause}
+              onSeek={handleVideoSeek}
+            />
+            <ReactionOverlay reactions={activeReactions} />
 
-          <div className="absolute bottom-3 md:bottom-6 left-1/2 -translate-x-1/2 flex gap-2 md:gap-3 bg-black/60 backdrop-blur-md p-2 md:p-3 rounded-full border border-white/10 z-30">
-            {['❤️', '🔥', '😂', '😮', '👏'].map(emoji => (
-              <button
-                key={emoji}
-                onClick={() => handleReaction(emoji)}
-                className="text-xl md:text-2xl hover:scale-125 transition-transform active:scale-95 p-1"
-              >
-                {emoji}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="w-full lg:w-96 lg:border-l border-t lg:border-t-0 border-white/10 bg-muted/20 flex flex-col h-[40vh] lg:h-auto">
-          <div className="flex border-b border-white/10 flex-shrink-0">
-            <button className="flex-1 py-3 text-sm font-medium text-primary border-b-2 border-primary flex items-center justify-center gap-2">
-              <MessageSquare className="w-4 h-4" /> Чат
-            </button>
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-3 md:p-4 space-y-3">
-            <AnimatePresence>
-              {messages.filter(msg => msg.type === 'chat_message' || msg.type === 'system' || msg.type === 'connected').map((msg, index) => (
-                <motion.div key={index} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
-                  {msg.type === 'system' || msg.type === 'connected' ? (
-                    <div className="text-center text-xs text-muted-foreground py-2">
-                      {msg.type === 'connected' ? msg.message : msg.content}
-                    </div>
-                  ) : (
-                    <div className="flex gap-2 md:gap-3">
-                      <Avatar username={msg.username} size="sm" />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-baseline gap-2 mb-1">
-                          <span className="text-xs font-semibold text-foreground truncate">{msg.username}</span>
-                          <span className="text-[10px] text-muted-foreground opacity-50 flex-shrink-0">
-                            {new Date(msg.timestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        </div>
-                        <div className="bg-muted/50 p-2 md:p-2.5 rounded-lg rounded-tl-none text-sm break-words">
-                          {msg.content}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </motion.div>
-              ))}
-            </AnimatePresence>
-            <div ref={messagesEndRef} />
-          </div>
-
-          <div className="p-3 md:p-4 border-t border-white/10 flex-shrink-0">
-            <form onSubmit={handleSend} className="flex gap-2">
-              <input
-                type="text"
-                placeholder={isConnected ? "Сообщение..." : "Подключение..."}
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                disabled={!isConnected}
-                className="flex-1 min-w-0 px-3 py-2 bg-background border border-white/10 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+            {isHost && selectedMovie && (
+              <MovieBanner
+                title={selectedMovie.title}
+                posterPath={selectedMovie.poster_path}
+                releaseYear={selectedMovie.release_year}
               />
-              <button
-                type="submit"
-                disabled={!isConnected || !chatInput.trim()}
-                className="p-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 flex-shrink-0"
-              >
-                <Send className="w-4 h-4" />
-              </button>
-            </form>
+            )}
+
+            <div className="absolute bottom-4 left-1/2 z-30 flex -translate-x-1/2 gap-2 rounded-full border border-white/10 bg-black/60 p-2 backdrop-blur-md md:bottom-6 md:gap-3 md:p-3">
+              {['❤️', '🔥', '😂', '😮', '👏'].map(emoji => (
+                <button
+                  key={emoji}
+                  onClick={() => handleReaction(emoji)}
+                  className="p-1 text-xl transition-transform hover:scale-125 active:scale-95 md:text-2xl"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+
+            {!videoUrl && (
+              <div className="pointer-events-none absolute left-4 top-4 z-10 flex items-center gap-2 rounded-full border border-white/10 bg-[rgba(13,13,18,0.65)] px-3 py-1.5 text-xs text-[var(--color-text-muted)] backdrop-blur-md">
+                <Film className="size-3.5" />
+                Видео ещё не выбрано
+              </div>
+            )}
           </div>
         </div>
+
+        <ChatPanel
+          ref={messagesEndRef}
+          messages={messages}
+          chatInput={chatInput}
+          onChatInputChange={setChatInput}
+          onSend={handleSend}
+          isConnected={isConnected}
+        />
       </main>
     </div>
   );

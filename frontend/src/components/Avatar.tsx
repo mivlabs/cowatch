@@ -13,12 +13,9 @@ interface AvatarProps {
     // Генерируем детерминированный цвет на основе имени (чтобы у "traqmaris" всегда был один цвет)
     const getColor = (name: string) => {
       const colors = [
-        'bg-purple-500/20 text-purple-300 border-purple-500/30',
-        'bg-blue-500/20 text-blue-300 border-blue-500/30',
-        'bg-pink-500/20 text-pink-300 border-pink-500/30',
-        'bg-cyan-500/20 text-cyan-300 border-cyan-500/30',
-        'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
-        'bg-amber-500/20 text-amber-300 border-amber-500/30',
+        'bg-[var(--color-accent-cyan)]/20 text-[var(--color-accent-cyan)] border-[var(--color-accent-cyan)]/30',
+        'bg-[var(--color-accent-magenta)]/20 text-[var(--color-accent-magenta)] border-[var(--color-accent-magenta)]/30',
+        'bg-[var(--color-brand-amber)]/20 text-[var(--color-brand-amber)] border-[var(--color-brand-amber)]/30',
       ];
       
       let hash = 0;

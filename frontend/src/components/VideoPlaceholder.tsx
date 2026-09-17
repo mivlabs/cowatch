@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Film, Link as LinkIcon, Coffee } from 'lucide-react';
+import { Film, Link as LinkIcon, Popcorn } from 'lucide-react';
 
 interface VideoPlaceholderProps {
   isHost: boolean;
@@ -8,48 +8,50 @@ interface VideoPlaceholderProps {
 export function VideoPlaceholder({ isHost }: VideoPlaceholderProps) {
   return (
     // 🔥 w-full h-full min-h-[500px] гарантирует, что блок займет всё доступное место и не схлопнется
-    <div className="w-full h-full min-h-[500px] flex items-center justify-center bg-gradient-to-br from-purple-900/20 via-background to-blue-900/20 relative overflow-hidden p-8">
-      
-      {/* Фоновые анимированные круги */}
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-1/3 left-1/3 w-64 h-64 bg-purple-500/10 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute bottom-1/3 right-1/3 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
+    <div className="relative flex h-full min-h-[500px] w-full items-center justify-center overflow-hidden bg-[var(--color-bg-base)] p-8">
+
+      {/* Фоновые анимированные пятна */}
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute left-1/3 top-1/3 size-64 animate-pulse rounded-full bg-[var(--color-accent-cyan)]/10 blur-3xl" />
+        <div
+          className="absolute bottom-1/3 right-1/3 size-64 animate-pulse rounded-full bg-[var(--color-brand-amber)]/10 blur-3xl"
+          style={{ animationDelay: '1s' }}
+        />
       </div>
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
-        className="relative z-10 text-center max-w-md w-full"
+        className="relative z-10 w-full max-w-md text-center"
       >
         <motion.div
-          animate={{ 
+          animate={{
             rotate: [0, 5, -5, 0],
-            scale: [1, 1.05, 1]
+            scale: [1, 1.05, 1],
           }}
-          transition={{ 
+          transition={{
             duration: 3,
             repeat: Infinity,
-            ease: "easeInOut"
+            ease: 'easeInOut',
           }}
-          className="inline-flex items-center justify-center w-24 h-24 rounded-full bg-gradient-to-br from-purple-500/20 to-blue-500/20 border border-white/10 mb-8 shadow-xl"
+          className="mb-8 inline-flex size-24 items-center justify-center rounded-full border border-white/15 bg-white/[0.06] shadow-xl backdrop-blur-md"
         >
           {isHost ? (
-            <LinkIcon className="w-12 h-12 text-purple-400" />
+            <LinkIcon className="size-12 text-[var(--color-accent-cyan)]" />
           ) : (
-            <Coffee className="w-12 h-12 text-blue-400" />
+            <Popcorn className="size-12 text-[var(--color-brand-amber)]" />
           )}
         </motion.div>
 
-        <h2 className="text-3xl font-bold mb-4 text-foreground">
+        <h2 className="mb-4 text-3xl font-bold text-[var(--color-text-primary)]">
           {isHost ? 'Видео пока не выбрано' : 'Комната ожидает'}
         </h2>
-        
-        <p className="text-lg text-muted-foreground mb-8 leading-relaxed">
-          {isHost 
+
+        <p className="mb-8 text-lg leading-relaxed text-[var(--color-text-secondary)]">
+          {isHost
             ? 'Вставьте ссылку на YouTube или Rutube в поле выше, чтобы начать совместный просмотр'
-            : 'Хост ещё не выбрал видео. Самое время заварить чай или кофе ☕'
-          }
+            : 'Хост ещё не выбрал видео. Запасаемся попкорном!'}
         </p>
 
         {isHost && (
@@ -57,9 +59,9 @@ export function VideoPlaceholder({ isHost }: VideoPlaceholderProps) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.5 }}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-purple-500/10 border border-purple-500/30 text-sm font-medium text-purple-300"
+            className="inline-flex items-center gap-2 rounded-full border border-[var(--color-accent-cyan)]/30 bg-[var(--color-accent-cyan)]/10 px-5 py-2.5 text-sm font-medium text-[var(--color-accent-cyan)]"
           >
-            <Film className="w-4 h-4" />
+            <Film className="size-4" />
             Поддерживаются YouTube и Rutube
           </motion.div>
         )}

@@ -49,5 +49,8 @@ htmlcov/
 
 node_modules/
 
+# Build output
+dist/
+
 # Local patch tooling (not for repo)
 apply-patches.sh

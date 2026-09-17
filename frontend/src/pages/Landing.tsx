@@ -7,7 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { recommendationsApi } from '@/lib/api';
 import { JoinModal } from '@/components/JoinModal';
 import { Avatar } from '@/components/Avatar';
-import { Logo } from '@/components/Logo';
+import { SphereMark } from '@/components/SphereMark';
 import { Hero } from '@/components/landing/Hero';
 import { HowItWorks } from '@/components/landing/HowItWorks';
 import { Features } from '@/components/landing/Features';
@@ -92,7 +92,9 @@ export function Landing() {
          is real working functionality carried over from the old HomePage and
          has to live somewhere. Kept minimal and styled with the new tokens. */}
       <header className="flex items-center justify-between px-6 py-5 md:px-16">
-        <Logo size="sm" />
+        <Link to="/" aria-label="CoWatch" className="flex items-center">
+          <SphereMark size={38} />
+        </Link>
         {isAuthenticated ? (
           <div className="flex items-center gap-2 md:gap-3">
             <button

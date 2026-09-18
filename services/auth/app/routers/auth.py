@@ -92,8 +92,8 @@ async def login(user_in: UserLogin, db: AsyncSession = Depends(get_db)):
             detail="Inactive user"
         )
     
-    access_token = create_access_token(data={"sub": user.email, "user_id": user.id})
-    refresh_token = create_refresh_token(data={"sub": user.email, "user_id": user.id})
+    access_token = create_access_token(data={"sub": user.email, "user_id": user.id, "username": user.username})
+    refresh_token = create_refresh_token(data={"sub": user.email, "user_id": user.id, "username": user.username})
     
     return Token(access_token=access_token, refresh_token=refresh_token)
 

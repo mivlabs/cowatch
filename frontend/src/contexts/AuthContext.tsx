@@ -57,7 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const userData: User = {
         id: payload.user_id,
         email: payload.sub,
-        username: payload.sub.split('@')[0],
+        username: payload.username || payload.sub.split('@')[0],
         isGuest: false,
       };
 

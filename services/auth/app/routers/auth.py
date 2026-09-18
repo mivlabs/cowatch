@@ -13,6 +13,7 @@ from app.models.user import User
 from app.schemas.user import UserCreate, UserLogin, Token, UserResponse
 from app.services.auth import (
     get_user_by_email,
+    get_user_by_username,
     create_user,
     verify_password,
     create_access_token,
@@ -63,7 +64,14 @@ async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Email already registered"
         )
-    
+
+    existing_username = await get_user_by_username(db, user_in.username)
+    if existing_username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already taken"
+        )
+
     new_user = await create_user(db, user_in)
     await grant_achievement(db, new_user.id, "Первый шаг")
     return new_user
@@ -118,8 +126,9 @@ async def get_profile_stats(user_id: int, db: AsyncSession = Depends(get_db)):
             history=[]
         )
 
-    # 3. Безопасно получаем имя: если поля username нет, берем email или дефолтное значение
-    display_name = getattr(user, 'username', None) or user.email or f"User_{user.id}"
+    # 3. username теперь реальное поле модели (nullable=False), фолбэки нужны
+    # только для строк, заведённых до этой миграции (см. backfill-скрипт)
+    display_name = user.username or user.email or f"User_{user.id}"
 
     # 4. Получаем ачивки (вместе с unlocked_at из UserAchievement — Achievement сам
     # по себе этой колонки не хранит, а AchievementResponse её требует)

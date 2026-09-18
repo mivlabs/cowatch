@@ -58,10 +58,13 @@
 
 ## Архитектура
 
-Бэкенд разбит на микросервисы. События в комнатах (чат, видео, реакции) идут через WebSocket и Redis Pub/Sub.
-Кросс-сервисная система ачивок работает отдельно, через события в RabbitMQ: rooms и messages публикуют
-доменные события (создание комнаты, вход в комнату, отправленное сообщение, законченный просмотр),
-notifications их слушает, проверяет условия ачивок и выдаёт их через внутренний HTTP-эндпоинт auth.
+Бэкенд разбит на 5 независимых микросервисов: auth, rooms, messages, recommendations, notifications.
+У каждого своя выделенная база Postgres (auth_db, rooms_db, messages_db, recommendations_db,
+notifications_db) — сервисы не лезут друг другу в таблицы напрямую. События в комнатах (чат, видео,
+реакции) идут через WebSocket и Redis Pub/Sub. Кросс-сервисная система ачивок работает отдельно, через
+события в RabbitMQ: rooms и messages публикуют доменные события (создание комнаты, вход в комнату,
+отправленное сообщение, законченный просмотр), notifications их слушает, проверяет условия ачивок и
+выдаёт их через внутренний HTTP-эндпоинт auth.
 
 ```mermaid
 flowchart TB
@@ -74,11 +77,12 @@ flowchart TB
         AUTH["Auth Service :8001"]
         ROOMS["Rooms Service :8003"]
         MSG["Messages Service :8002"]
+        RECS["Recommendations Service :8005"]
         NOTIF["Notifications Service :8004"]
     end
 
     subgraph Infra["Инфраструктура"]
-        PG[(PostgreSQL 16)]
+        PG[(PostgreSQL 16 — auth_db / rooms_db / messages_db / recommendations_db / notifications_db)]
         REDIS[(Redis 7)]
         RMQ[(RabbitMQ 3 — cowatch.events)]
     end
@@ -91,6 +95,7 @@ flowchart TB
     ROOMS --> REDIS
     MSG --> PG
     MSG --> REDIS
+    RECS --> PG
     ROOMS -->|"room.created / room.joined / video.watch_completed"| RMQ
     MSG -->|"message.sent"| RMQ
     RMQ --> NOTIF

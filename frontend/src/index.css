@@ -1,7 +1,27 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,500;1,600&family=IBM+Plex+Mono:wght@400;500&family=Onest:wght@400;500;600&family=Pixelify+Sans:wght@400;500&display=swap");
 @import "tailwindcss";
 
 @theme {
+  /*
+   * "Night Cinema" palette: a painted night sky with cream text and gold stars.
+   * Coral is for reactions only, at most one spot per screen. Screens are being
+   * moved onto these tokens one by one; the older tokens below go away once the
+   * last screen no longer uses them.
+   */
+  --color-ink: #070a1c;
+  --color-night: #0d1638;
+  --color-ultra: #1f2f78;
+  --color-cream: #efe4c8;
+  --color-cream-dim: #b9b19c;
+  --color-gold: #f2c14e;
+  --color-coral: #ff7a6b;
+  --color-line: rgb(239 228 200 / 0.18);
+
+  --font-display: "Cormorant Garamond", "Iowan Old Style", Georgia, serif;
+  --font-body: "Onest", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", monospace;
+  --font-pixel: "Pixelify Sans", "IBM Plex Mono", monospace;
+
   --color-background: hsl(222.2 84% 4.9%);
   --color-foreground: hsl(210 40% 98%);
   --color-primary: hsl(262.1 83.3% 57.8%);
@@ -73,7 +93,97 @@ body {
    * separate, heavier change (new dependency, swaps every literal emoji
    * character for an <img>) and hasn't been done here.
    */
-  font-family: 'Inter', system-ui, -apple-system, 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
+  font-family: var(--font-body), 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
+}
+
+/* Shared pieces of the Night Cinema style, used across screens. */
+@layer components {
+  .cw-label {
+    font: 500 11px/1.4 var(--font-mono);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-cream-dim);
+  }
+
+  .cw-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font: 500 13px/1 var(--font-mono);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    border-radius: 4px;
+    padding: 15px 22px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: transform 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
+  }
+  .cw-btn:active { transform: translateY(1px); }
+  .cw-btn:disabled { cursor: not-allowed; opacity: 0.5; }
+  .cw-btn-primary { background: var(--color-cream); color: var(--color-ink); }
+  .cw-btn-primary:hover { background: #fff6dc; }
+  .cw-btn-line { background: transparent; color: var(--color-cream); border-color: var(--color-line); }
+  .cw-btn-line:hover { border-color: var(--color-cream); }
+  .cw-btn-ghost { background: transparent; color: var(--color-gold); padding-inline: 4px; }
+  .cw-btn-ghost:hover { text-decoration: underline; text-underline-offset: 4px; }
+
+  .cw-code-input {
+    font: 500 18px var(--font-mono);
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    background: rgb(7 10 28 / 0.55);
+    color: var(--color-cream);
+    border: 1px solid var(--color-line);
+    border-radius: 4px;
+    padding: 12px 16px;
+    width: 12ch;
+    min-width: 0;
+  }
+  .cw-code-input::placeholder { color: var(--color-cream-dim); opacity: 0.6; }
+
+  /* Pixel-framed window. Only for small panels: chat, viewer list, toasts. */
+  .cw-win {
+    border: 2px solid var(--color-cream);
+    border-radius: 2px;
+    background: var(--color-night);
+    box-shadow: 5px 5px 0 var(--color-ultra);
+  }
+  .cw-win-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    background: var(--color-cream);
+    color: var(--color-ink);
+    font: 500 14px var(--font-pixel);
+    padding: 4px 8px;
+  }
+
+  .cw-grain {
+    opacity: 0.22;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-gold);
+  outline-offset: 3px;
+}
+
+@keyframes cw-breathe {
+  50% { transform: scale(1.025, 1.04); }
+}
+
+.cw-breathe {
+  animation: cw-breathe 4.5s ease-in-out infinite;
+  transform-origin: 50% 90%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cw-btn { transition: none; }
+  .cw-breathe { animation: none; }
 }
 
 /*

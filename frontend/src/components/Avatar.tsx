@@ -13,9 +13,9 @@ interface AvatarProps {
     // Генерируем детерминированный цвет на основе имени (чтобы у "traqmaris" всегда был один цвет)
     const getColor = (name: string) => {
       const colors = [
-        'bg-[var(--color-accent-cyan)]/20 text-[var(--color-accent-cyan)] border-[var(--color-accent-cyan)]/30',
-        'bg-[var(--color-accent-magenta)]/20 text-[var(--color-accent-magenta)] border-[var(--color-accent-magenta)]/30',
-        'bg-[var(--color-brand-amber)]/20 text-[var(--color-brand-amber)] border-[var(--color-brand-amber)]/30',
+        'bg-gold/15 text-gold border-gold/40',
+        'bg-cream/10 text-cream border-cream/30',
+        'bg-ultra/60 text-cream border-ultra',
       ];
       
       let hash = 0;
@@ -32,7 +32,7 @@ interface AvatarProps {
     };
   
     return (
-      <div className={`flex items-center justify-center rounded-full font-bold border ${sizeClasses[size]} ${getColor(username)} shrink-0`}>
+      <div className={`flex items-center justify-center rounded-full font-mono font-medium border ${sizeClasses[size]} ${getColor(username)} shrink-0`}>
         {getInitials(username)}
       </div>
     );

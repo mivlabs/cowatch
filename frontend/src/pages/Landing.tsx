@@ -1,19 +1,22 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { motion } from 'framer-motion';
-import { Film, LogOut, Sparkles } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { recommendationsApi } from '@/lib/api';
 import { JoinModal } from '@/components/JoinModal';
 import { Avatar } from '@/components/Avatar';
-import { SphereMark } from '@/components/SphereMark';
+import { Logo } from '@/components/Logo';
+import { SiteFooter } from '@/components/SiteFooter';
+import { CatSticker } from '@/components/brand/CatSticker';
 import { Hero } from '@/components/landing/Hero';
 import { HowItWorks } from '@/components/landing/HowItWorks';
 import { Features } from '@/components/landing/Features';
 import { CtaSection } from '@/components/landing/CtaSection';
+import { PlateHeader } from '@/components/landing/PlateHeader';
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w342';
+
+const NAV_LINK = 'font-mono text-xs font-medium uppercase tracking-[0.12em] text-cream transition-colors hover:text-gold';
 
 interface RecommendedItem {
   content_id: number;
@@ -30,7 +33,7 @@ export function Landing() {
   const navigate = useNavigate();
   const { logout, user, isAuthenticated } = useAuth();
 
-  // Блок "Рекомендуем": молча ничего не рендерим, если модель ещё не
+  // Блок "Для вас": молча ничего не рендерим, если модель ещё не
   // обучена (503) или рекомендаций нет — это не ошибка, которую стоит
   // показывать пользователю на главной странице.
   const recommendationsQuery = useQuery({
@@ -81,115 +84,106 @@ export function Landing() {
     }
   };
 
-  const handleJoinAsGuest = () => {
+  const openSignIn = () => {
     setModalRoomCode(undefined);
     setModalOpen(true);
   };
 
-  return (
-    <div className="min-h-screen bg-[var(--color-bg-base)] text-[var(--color-text-primary)]">
-      {/* Top nav — not part of the Figma marketing mock, but auth/profile/logout
-         is real working functionality carried over from the old HomePage and
-         has to live somewhere. Kept minimal and styled with the new tokens. */}
-      <header className="flex items-center justify-between px-6 py-5 md:px-16">
-        <Link to="/" aria-label="CoWatch" className="flex items-center">
-          <SphereMark size={38} />
-        </Link>
-        {isAuthenticated ? (
-          <div className="flex items-center gap-2 md:gap-3">
-            <button
-              onClick={() => navigate('/profile')}
-              className="flex items-center gap-2 rounded-lg border border-white/15 bg-white/[0.06] px-3 py-2 text-white backdrop-blur-md transition-colors hover:bg-white/[0.12]"
-              title="Мой профиль"
-            >
-              <Avatar username={user?.username || 'User'} size="sm" />
-              <span className="hidden text-sm font-medium sm:inline">
-                {user?.isGuest ? `🎭 ${user.username}` : user?.username}
-              </span>
-            </button>
-            <button
-              onClick={logout}
-              className="flex items-center gap-2 rounded-lg border border-white/15 bg-white/[0.06] px-4 py-2 text-white backdrop-blur-md transition-colors hover:bg-white/[0.12]"
-            >
-              <LogOut className="size-4" />
-              <span className="hidden sm:inline">Выйти</span>
-            </button>
-          </div>
-        ) : (
-          <div className="flex gap-2">
-            <button
-              onClick={() => {
-                setModalRoomCode(undefined);
-                setModalOpen(true);
-              }}
-              className="rounded-lg border border-white/15 bg-white/[0.06] px-4 py-2 text-sm font-medium text-white backdrop-blur-md transition-colors hover:bg-white/[0.12]"
-            >
-              Войти
-            </button>
-            <Link
-              to="/register"
-              className="rounded-lg border border-white/15 bg-white/[0.06] px-4 py-2 text-sm font-medium text-white backdrop-blur-md transition-colors hover:bg-white/[0.12]"
-            >
-              Регистрация
-            </Link>
-          </div>
-        )}
-      </header>
+  const nav = (
+    <nav aria-label="Главное меню" className="flex flex-wrap items-center gap-x-6 gap-y-3">
+      <Link to="/" aria-label="CoWatch, на главную" className="mr-auto">
+        <Logo />
+      </Link>
+      {isAuthenticated ? (
+        <>
+          <button
+            type="button"
+            onClick={() => navigate('/profile')}
+            className={`flex items-center gap-2.5 ${NAV_LINK}`}
+            title="Мой профиль"
+          >
+            <Avatar username={user?.username || 'User'} size="sm" />
+            <span className="hidden sm:inline">
+              {user?.username}
+              {user?.isGuest && <span className="text-cream-dim"> · гость</span>}
+            </span>
+          </button>
+          <button type="button" onClick={logout} className={NAV_LINK}>
+            Выйти
+          </button>
+        </>
+      ) : (
+        <>
+          <button type="button" onClick={openSignIn} className={NAV_LINK}>
+            Войти
+          </button>
+          <Link to="/register" className={NAV_LINK}>
+            Регистрация
+          </Link>
+        </>
+      )}
+    </nav>
+  );
 
+  const recommendations = recommendationsQuery.data ?? [];
+
+  return (
+    <div className="min-h-screen bg-ink pb-24 text-cream">
       <Hero
+        nav={nav}
         onCreateRoom={handleCreateRoom}
         roomCode={roomCode}
         onRoomCodeChange={setRoomCode}
         onJoin={handleJoin}
       />
 
-      <HowItWorks />
-      <Features />
+      <main className="mx-auto mt-[88px] grid max-w-[1040px] gap-[88px] px-4">
+        <HowItWorks />
+        <Features />
 
-      {/* Personalized recommendations — real functionality from the old HomePage,
-         no equivalent block in the Figma marketing mock. Placed here so it reads
-         as a natural continuation of the Features bento above it. */}
-      {recommendationsQuery.data && recommendationsQuery.data.length > 0 && (
-        <section className="bg-[var(--color-bg-surface)] px-6 py-16 md:px-16">
-          <div className="mx-auto max-w-6xl">
-            <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-[var(--color-text-primary)]">
-              <Sparkles className="size-5 text-[var(--color-accent-cyan)]" />
-              Рекомендуем
-            </h2>
-            <div className="flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2">
-              {recommendationsQuery.data.map((item) => (
-                <motion.button
+        {recommendations.length > 0 && (
+          <section className="grid gap-5 md:grid-cols-[220px_1fr] md:gap-8">
+            <PlateHeader
+              label="Для вас"
+              title="Что посмотреть сегодня"
+              note="Нажмите на фильм, чтобы собрать комнату с ним."
+            />
+            <div className="flex min-w-0 snap-x snap-mandatory gap-4 overflow-x-auto pb-2">
+              {recommendations.map((item) => (
+                <button
                   key={item.content_id}
                   type="button"
-                  whileHover={{ scale: 1.03 }}
                   onClick={() => handleRecommendationClick(item)}
-                  className="group w-32 shrink-0 snap-start text-left"
+                  className="group grid w-32 shrink-0 snap-start content-start gap-2 text-left"
                 >
-                  <div className="mb-2 h-48 w-32 overflow-hidden rounded-xl border border-white/10 bg-[var(--color-bg-elevated)]">
+                  <div className="aspect-[2/3] w-32 overflow-hidden rounded border border-line bg-night">
                     {item.poster_path ? (
                       <img
                         src={`${TMDB_IMAGE_BASE}${item.poster_path}`}
-                        alt={item.title}
-                        className="size-full object-cover transition-transform group-hover:scale-105"
+                        alt=""
+                        loading="lazy"
+                        className="size-full object-cover transition-transform duration-300 group-hover:scale-105"
                       />
                     ) : (
-                      <div className="flex size-full items-center justify-center">
-                        <Film className="size-8 text-[var(--color-text-muted)]" />
+                      <div className="grid size-full place-items-center">
+                        <CatSticker pose="sit" width={56} />
                       </div>
                     )}
                   </div>
-                  <p className="truncate text-sm font-medium text-[var(--color-text-primary)]">{item.title}</p>
-                  {item.release_year && (
-                    <p className="text-xs text-[var(--color-text-muted)]">{item.release_year}</p>
-                  )}
-                </motion.button>
+                  <p className="truncate font-display text-xl italic leading-tight">{item.title}</p>
+                  {item.release_year && <p className="font-mono text-xs text-cream-dim">{item.release_year}</p>}
+                </button>
               ))}
             </div>
-          </div>
-        </section>
-      )}
+          </section>
+        )}
 
-      <CtaSection onCreateRoom={handleCreateRoom} onJoinAsGuest={handleJoinAsGuest} />
+        <CtaSection onCreateRoom={handleCreateRoom} onJoinAsGuest={openSignIn} />
+      </main>
+
+      <div className="mt-[88px]">
+        <SiteFooter />
+      </div>
 
       <JoinModal isOpen={modalOpen} onClose={() => setModalOpen(false)} roomCode={modalRoomCode} />
     </div>

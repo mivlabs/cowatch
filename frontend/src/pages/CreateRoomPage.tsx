@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { ArrowLeft, Film, Users, Lock, Search, X } from 'lucide-react';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { api, recommendationsApi } from '@/lib/api';
+import { cn } from '@/lib/utils';
+import { Logo } from '@/components/Logo';
+import { NightSky } from '@/components/brand/NightSky';
 
 interface CatalogItem {
   id: number;
@@ -16,29 +17,41 @@ interface CatalogItem {
 
 const TMDB_IMAGE_BASE = 'https://image.tmdb.org/t/p/w92';
 
+function contentMeta(item: CatalogItem, withGenres = false) {
+  return [
+    item.media_type === 'tv' ? 'Сериал' : 'Фильм',
+    item.release_year,
+    withGenres && item.genres.length ? item.genres.slice(0, 2).join(', ') : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function Poster({ path }: { path: string | null }) {
+  return path ? (
+    <img src={`${TMDB_IMAGE_BASE}${path}`} alt="" className="h-12 w-8 shrink-0 rounded-sm border border-line object-cover" />
+  ) : (
+    <div className="h-12 w-8 shrink-0 rounded-sm border border-line bg-ink" />
+  );
+}
+
 export function CreateRoomPage() {
-  const [title, setTitle] = useState('');
-  const [maxParticipants, setMaxParticipants] = useState(10);
-  const [isPrivate, setIsPrivate] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
 
-  // --- Поиск по каталогу ---
-  const [query, setQuery] = useState('');
-  const [debouncedQuery, setDebouncedQuery] = useState('');
-  const [selectedContent, setSelectedContent] = useState<CatalogItem | null>(null);
-
   // Фильм может прийти уже выбранным с главной страницы (клик по карточке
-  // в блоке "Рекомендуем", см. Landing.tsx) — тогда ведём себя так, будто
+  // в блоке "Для вас", см. Landing.tsx) — тогда ведём себя так, будто
   // его только что нашли через тот же поиск по каталогу, без повторного ввода.
-  useEffect(() => {
-    const preselected = (location.state as { preselected?: CatalogItem } | null)?.preselected;
-    if (preselected) {
-      setSelectedContent(preselected);
-      setQuery(preselected.title);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const preselected = (location.state as { preselected?: CatalogItem } | null)?.preselected ?? null;
+
+  const [title, setTitle] = useState('');
+  const [maxParticipants, setMaxParticipants] = useState(10);
+  const [isPrivate, setIsPrivate] = useState(false);
+
+  // --- Поиск по каталогу ---
+  const [query, setQuery] = useState(preselected?.title ?? '');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  const [selectedContent, setSelectedContent] = useState<CatalogItem | null>(preselected);
 
   // Простой дебаунс без библиотек: ждём 300мс тишины после последней
   // буквы, прежде чем реально бить в API. Без этого — запрос на каждое
@@ -85,9 +98,8 @@ export function CreateRoomPage() {
     onSuccess: (data) => {
       navigate(`/room/${data.code}`);
     },
-    onError: (err: any) => {
+    onError: (err) => {
       console.error('Ошибка создания комнаты:', err);
-      alert('Не удалось создать комнату');
     },
   });
 
@@ -104,170 +116,167 @@ export function CreateRoomPage() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-[var(--color-bg-base)] p-4">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md rounded-2xl border border-white/10 bg-white/[0.04] p-8 backdrop-blur-md"
-      >
-        <button
-          onClick={() => navigate('/')}
-          className="mb-6 flex items-center gap-2 text-[var(--color-text-secondary)] transition-colors hover:text-[var(--color-text-primary)]"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Назад
-        </button>
+    <div className="relative min-h-screen text-cream">
+      <NightSky seed={9} className="fixed" />
 
-        <h1 className="mb-2 text-3xl font-bold text-[var(--color-text-primary)]">Создать комнату</h1>
-        <p className="mb-6 text-[var(--color-text-secondary)]">Настрой параметры для совместного просмотра</p>
+      <div className="relative mx-auto grid max-w-[1040px] gap-12 px-4 pb-24 pt-7">
+        <nav aria-label="Главное меню" className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          <Link to="/" aria-label="CoWatch, на главную" className="mr-auto">
+            <Logo />
+          </Link>
+          <Link
+            to="/"
+            className="font-mono text-xs font-medium uppercase tracking-[0.12em] text-cream transition-colors hover:text-gold"
+          >
+            На главную
+          </Link>
+        </nav>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="relative">
-            <label className="mb-2 block text-sm font-medium text-[var(--color-text-primary)]">
-              <Search className="mr-2 inline w-4 h-4" />
-              Фильм или сериал (необязательно)
-            </label>
+        <main className="mx-auto grid w-full max-w-[560px] gap-8 rounded border border-line bg-night p-6 sm:p-8">
+          <header className="grid gap-2.5">
+            <span className="cw-label">Новая комната</span>
+            <h1 className="font-display text-[clamp(40px,7vw,56px)] font-medium italic leading-[1.02]">Новый сеанс</h1>
+            <p className="text-cream-dim">Фильм выбирать не обязательно, хватит названия комнаты.</p>
+          </header>
 
-            {selectedContent ? (
-              <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-[var(--color-bg-elevated)] p-3">
-                {selectedContent.poster_path && (
-                  <img
-                    src={`${TMDB_IMAGE_BASE}${selectedContent.poster_path}`}
-                    alt={selectedContent.title}
-                    className="h-12 w-8 rounded object-cover"
-                  />
-                )}
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium text-[var(--color-text-primary)]">{selectedContent.title}</p>
-                  <p className="text-xs text-[var(--color-text-secondary)]">
-                    {selectedContent.media_type === 'tv' ? 'Сериал' : 'Фильм'}
-                    {selectedContent.release_year ? ` · ${selectedContent.release_year}` : ''}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleClearContent}
-                  className="p-1 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)]"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+          <form onSubmit={handleSubmit} className="grid gap-7">
+            <div className="relative grid gap-2">
+              <div className="flex items-baseline justify-between gap-3">
+                <label htmlFor="content-search" className="cw-label">
+                  Фильм или сериал
+                </label>
+                <span className="font-mono text-[11px] text-cream-dim">необязательно</span>
               </div>
-            ) : (
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Начни вводить название..."
-                className="w-full rounded-xl border border-white/10 bg-[var(--color-bg-elevated)] px-4 py-3 text-[var(--color-text-primary)] outline-none focus:ring-2 focus:ring-[var(--color-accent-cyan)]"
-              />
-            )}
 
-            {showDropdown && (
-              <div className="absolute z-10 mt-1 max-h-64 w-full overflow-y-auto overflow-hidden rounded-xl border border-white/10 bg-[var(--color-bg-elevated)]">
-                {catalogQuery.isLoading && (
-                  <p className="p-3 text-sm text-[var(--color-text-secondary)]">Ищу...</p>
-                )}
-                {catalogQuery.isError && (
-                  <p className="p-3 text-sm text-red-400">
-                    Не удалось получить каталог. Recommendations-сервис поднят?
-                  </p>
-                )}
-                {catalogQuery.data?.length === 0 && (
-                  <p className="p-3 text-sm text-[var(--color-text-secondary)]">Ничего не нашли</p>
-                )}
-                {catalogQuery.data?.map((item) => (
-                  <button
-                    key={`${item.media_type}-${item.id}`}
-                    type="button"
-                    onClick={() => handleSelectContent(item)}
-                    className="flex w-full items-center gap-3 p-3 text-left transition-colors hover:bg-white/[0.06]"
-                  >
-                    {item.poster_path ? (
-                      <img
-                        src={`${TMDB_IMAGE_BASE}${item.poster_path}`}
-                        alt={item.title}
-                        className="h-12 w-8 shrink-0 rounded object-cover"
-                      />
-                    ) : (
-                      <div className="h-12 w-8 shrink-0 rounded bg-white/10" />
-                    )}
-                    <div className="min-w-0">
-                      <p className="truncate font-medium text-[var(--color-text-primary)]">{item.title}</p>
-                      <p className="truncate text-xs text-[var(--color-text-secondary)]">
-                        {item.media_type === 'tv' ? 'Сериал' : 'Фильм'}
-                        {item.release_year ? ` · ${item.release_year}` : ''}
-                        {item.genres.length ? ` · ${item.genres.slice(0, 2).join(', ')}` : ''}
-                      </p>
-                    </div>
+              {selectedContent ? (
+                <div className="flex items-center gap-3 rounded border border-line bg-ink/55 p-3">
+                  <Poster path={selectedContent.poster_path} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-display text-xl italic leading-tight">{selectedContent.title}</p>
+                    <p className="font-mono text-xs text-cream-dim">{contentMeta(selectedContent)}</p>
+                  </div>
+                  <button type="button" onClick={handleClearContent} className="cw-btn cw-btn-ghost">
+                    Убрать
                   </button>
-                ))}
+                </div>
+              ) : (
+                <input
+                  id="content-search"
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Начните вводить название"
+                  autoComplete="off"
+                  className="cw-field"
+                />
+              )}
+
+              {showDropdown && (
+                <div className="absolute inset-x-0 top-full z-10 mt-1 max-h-72 overflow-y-auto rounded border border-line bg-night shadow-[5px_5px_0_var(--color-ultra)]">
+                  {catalogQuery.isLoading && <p className="p-3 text-sm text-cream-dim">Ищем…</p>}
+                  {catalogQuery.isError && (
+                    <p className="p-3 text-sm text-coral">
+                      Поиск фильмов сейчас не работает. Комнату можно создать и без фильма.
+                    </p>
+                  )}
+                  {catalogQuery.data?.length === 0 && <p className="p-3 text-sm text-cream-dim">Ничего не нашли</p>}
+                  {catalogQuery.data?.map((item) => (
+                    <button
+                      key={`${item.media_type}-${item.id}`}
+                      type="button"
+                      onClick={() => handleSelectContent(item)}
+                      className="flex w-full items-center gap-3 border-b border-line p-3 text-left transition-colors last:border-b-0 hover:bg-ink/60"
+                    >
+                      <Poster path={item.poster_path} />
+                      <div className="min-w-0">
+                        <p className="truncate font-display text-lg italic leading-tight">{item.title}</p>
+                        <p className="truncate font-mono text-xs text-cream-dim">{contentMeta(item, true)}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="grid gap-2">
+              <label htmlFor="room-title" className="cw-label">
+                Название комнаты
+              </label>
+              <input
+                id="room-title"
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Например: Вечер с друзьями"
+                required
+                maxLength={50}
+                className="cw-field"
+              />
+            </div>
+
+            <div className="grid gap-3">
+              <div className="flex items-baseline justify-between gap-3">
+                <label htmlFor="room-seats" className="cw-label">
+                  Мест в зале
+                </label>
+                <span className="font-mono text-2xl tabular-nums text-gold">{maxParticipants}</span>
               </div>
-            )}
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-medium text-[var(--color-text-primary)]">
-              <Film className="mr-2 inline w-4 h-4" />
-              Название комнаты
-            </label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Например: Вечер с друзьями"
-              required
-              maxLength={50}
-              className="w-full rounded-xl border border-white/10 bg-[var(--color-bg-elevated)] px-4 py-3 text-[var(--color-text-primary)] outline-none focus:ring-2 focus:ring-[var(--color-accent-cyan)]"
-            />
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-medium text-[var(--color-text-primary)]">
-              <Users className="mr-2 inline w-4 h-4" />
-              Максимум участников: {maxParticipants}
-            </label>
-            <input
-              type="range"
-              min="2"
-              max="50"
-              value={maxParticipants}
-              onChange={(e) => setMaxParticipants(parseInt(e.target.value))}
-              className="w-full accent-[var(--color-accent-cyan)]"
-            />
-          </div>
-
-          <div className="flex items-center justify-between rounded-xl border border-white/10 bg-[var(--color-bg-elevated)] p-4">
-            <div className="flex items-center gap-3">
-              <Lock className="h-5 w-5 text-[var(--color-text-secondary)]" />
-              <div>
-                <p className="font-medium text-[var(--color-text-primary)]">Приватная комната</p>
-                <p className="text-sm text-[var(--color-text-secondary)]">Только по коду</p>
+              <input
+                id="room-seats"
+                type="range"
+                min="2"
+                max="50"
+                value={maxParticipants}
+                onChange={(e) => setMaxParticipants(parseInt(e.target.value))}
+                className="w-full accent-gold"
+              />
+              <div className="flex justify-between font-mono text-[11px] text-cream-dim" aria-hidden>
+                <span>2</span>
+                <span>50</span>
               </div>
             </div>
-            <label className="relative inline-flex cursor-pointer items-center">
-              <input
-                type="checkbox"
-                checked={isPrivate}
-                onChange={(e) => setIsPrivate(e.target.checked)}
-                className="peer sr-only"
-              />
-              <div className="peer h-6 w-11 rounded-full bg-white/10 transition-colors after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all after:content-[''] peer-checked:bg-[var(--color-accent-cyan)] peer-checked:after:translate-x-full peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-[var(--color-accent-cyan)]" />
-            </label>
-          </div>
 
-          <button
-            type="submit"
-            disabled={createRoomMutation.isPending || !title.trim()}
-            className="w-full rounded-xl px-4 py-3 font-semibold text-[#14141f] shadow-[0_8px_24px_-4px_rgba(125,59,237,0.35)] transition-opacity disabled:opacity-50"
-            style={{
-              backgroundImage:
-                'linear-gradient(1deg, #fafaff 5.66%, #c7ccdb 38.68%, #8c8fb8 57.55%, #d9dbf2 76.42%, #a6a8cc 100%)',
-            }}
-          >
-            {createRoomMutation.isPending ? 'Создаю...' : 'Создать комнату'}
-          </button>
-        </form>
-      </motion.div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={isPrivate}
+              onClick={() => setIsPrivate((value) => !value)}
+              className="flex w-full items-center justify-between gap-4 rounded border border-line p-4 text-left transition-colors hover:border-cream"
+            >
+              <span className="grid gap-0.5">
+                <span className="font-display text-[22px] italic leading-tight">Закрытый показ</span>
+                <span className="text-sm text-cream-dim">Зайти можно только по коду</span>
+              </span>
+              <span
+                className={cn(
+                  'relative h-6 w-11 shrink-0 rounded-full border transition-colors',
+                  isPrivate ? 'border-gold bg-gold/25' : 'border-line bg-ink',
+                )}
+                aria-hidden
+              >
+                <span
+                  className={cn(
+                    'absolute top-1/2 size-4 -translate-y-1/2 rounded-full transition-all',
+                    isPrivate ? 'left-[22px] bg-gold' : 'left-[3px] bg-cream-dim',
+                  )}
+                />
+              </span>
+            </button>
+
+            {createRoomMutation.isError && (
+              <p className="text-sm text-coral">Не получилось создать комнату. Попробуйте ещё раз.</p>
+            )}
+
+            <button
+              type="submit"
+              disabled={createRoomMutation.isPending || !title.trim()}
+              className="cw-btn cw-btn-primary w-full"
+            >
+              {createRoomMutation.isPending ? 'Создаём…' : 'Создать комнату'}
+            </button>
+          </form>
+        </main>
+      </div>
     </div>
   );
 }

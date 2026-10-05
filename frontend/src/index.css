@@ -142,6 +142,17 @@ body {
   }
   .cw-code-input::placeholder { color: var(--color-cream-dim); opacity: 0.6; }
 
+  .cw-field {
+    width: 100%;
+    background: rgb(7 10 28 / 0.55);
+    color: var(--color-cream);
+    border: 1px solid var(--color-line);
+    border-radius: 4px;
+    padding: 12px 14px;
+    font: 400 16px/1.4 var(--font-body);
+  }
+  .cw-field::placeholder { color: var(--color-cream-dim); opacity: 0.7; }
+
   /* Pixel-framed window. Only for small panels: chat, viewer list, toasts. */
   .cw-win {
     border: 2px solid var(--color-cream);

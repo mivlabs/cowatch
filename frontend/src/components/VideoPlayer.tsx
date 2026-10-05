@@ -281,14 +281,15 @@ export function VideoPlayer({
   const videoType = cleanUrl ? getVideoType(cleanUrl) : 'file';
 
   const syncBadge = !isHost ? (
-    <div className="absolute top-4 right-4 bg-primary/80 text-white px-3 py-1.5 rounded-full text-xs font-medium backdrop-blur-sm pointer-events-none">
-      🔄 Синхронизировано с хостом
+    <div className="pointer-events-none absolute right-3 top-3 flex items-center gap-2 rounded-sm border border-line bg-ink/85 px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-cream">
+      <span className="size-1.5 rounded-full bg-gold" aria-hidden />
+      Синхрон с хостом
     </div>
   ) : null;
 
   if (!cleanUrl) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-black">
+      <div className="flex flex-1 bg-ink">
         <VideoPlaceholder isHost={isHost} />
       </div>
     );
@@ -298,8 +299,8 @@ export function VideoPlayer({
     const youtubeId = extractYoutubeId(cleanUrl);
     if (!youtubeId) {
       return (
-        <div className="flex-1 flex items-center justify-center bg-black text-white">
-          <p>Неверная ссылка на YouTube</p>
+        <div className="grid flex-1 place-items-center bg-ink p-6 text-center text-cream-dim">
+          <p>Не получилось открыть ссылку на YouTube. Проверьте её и вставьте ещё раз.</p>
         </div>
       );
     }
@@ -325,8 +326,8 @@ export function VideoPlayer({
     const rutubeId = extractRutubeId(cleanUrl);
     if (!rutubeId) {
       return (
-        <div className="flex-1 flex items-center justify-center bg-black text-white">
-          <p>Неверная ссылка на Rutube</p>
+        <div className="grid flex-1 place-items-center bg-ink p-6 text-center text-cream-dim">
+          <p>Не получилось открыть ссылку на Rutube. Проверьте её и вставьте ещё раз.</p>
         </div>
       );
     }

@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Film } from 'lucide-react';
+import { isAxiosError } from 'axios';
 import { useState, useRef, useEffect, useCallback } from 'react';
 
 import { api, recommendationsApi } from '@/lib/api';
@@ -11,6 +11,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { RoomHeader } from '@/components/room/RoomHeader';
 import { MovieBanner } from '@/components/room/MovieBanner';
 import { ChatPanel } from '@/components/room/ChatPanel';
+import { GreetingToast } from '@/components/room/GreetingToast';
+import { NightSky } from '@/components/brand/NightSky';
+import { CatSticker } from '@/components/brand/CatSticker';
 import {
   useRoomWebSocket,
   type VideoReaction
@@ -26,6 +29,8 @@ interface SelectedCatalogItem {
   release_year: number | null;
 }
 
+const REACTIONS = ['❤️', '🔥', '😂', '😮', '👏'];
+
 export function RoomPage() {
   const { code } = useParams<{ code: string }>();
   const navigate = useNavigate();
@@ -36,6 +41,8 @@ export function RoomPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [activeReactions, setActiveReactions] = useState<VideoReaction[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [videoError, setVideoError] = useState('');
+  const [linkCopied, setLinkCopied] = useState(false);
 
   const processedReactionIds = useRef(new Set<string>());
 
@@ -58,6 +65,10 @@ export function RoomPage() {
       return response.data;
     },
     enabled: !!code,
+    // Комнаты нет — это окончательный ответ, повторять запрос бессмысленно
+    // (иначе экран «Такой комнаты нет» появлялся только через ~7 секунд ретраев).
+    retry: (failureCount, err) =>
+      !(isAxiosError(err) && err.response?.status === 404) && failureCount < 3,
   });
 
   // Комната хранит только room.content_id (число, ссылка на каталог фильмов
@@ -96,7 +107,7 @@ export function RoomPage() {
     const lastVideoChanged = [...videoEvents].reverse().find((e) => e.type === 'video_changed');
     if (!lastVideoChanged) return;
 
-    queryClient.setQueryData(['room', code], (oldData: any) => {
+    queryClient.setQueryData<Room>(['room', code], (oldData) => {
       if (!oldData) return oldData;
       const rawTitle = lastVideoChanged.title?.trim();
       const nextTitle = rawTitle ? `${oldData.title} — ${rawTitle}` : oldData.title;
@@ -149,8 +160,48 @@ export function RoomPage() {
     }
   };
 
-  const handleCopyCode = () => {
-    if (code) navigator.clipboard.writeText(code);
+  const handleCopyLink = async () => {
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/room/${code}`);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    } catch (err) {
+      console.error('Не удалось скопировать ссылку:', err);
+    }
+  };
+
+  const handleVideoSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (isSubmitting) return;
+    const form = e.currentTarget;
+    const formData = new FormData(form);
+    const url = ((formData.get('videoUrl') as string) || '').trim();
+    if (!url) return;
+    const manualTitle = (formData.get('videoTitle') as string)?.trim() || '';
+    const title = selectedMovie?.title || manualTitle || undefined;
+
+    setIsSubmitting(true);
+    setVideoError('');
+    try {
+      await api.patch(`/rooms/${code}/video`, { url, title });
+      queryClient.setQueryData<Room>(['room', code], (oldData) => {
+        if (!oldData) return oldData;
+        return {
+          ...oldData,
+          current_movie_url: url,
+          current_movie_title: title ? `${oldData.title} — ${title}` : oldData.title,
+          current_position: 0,
+          is_playing: false,
+        };
+      });
+      form.reset();
+    } catch (err) {
+      console.error('Ошибка обновления видео:', err);
+      setVideoError('Не получилось включить видео. Проверьте ссылку и попробуйте ещё раз.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleVideoPlay = useCallback((position: number) => {
@@ -167,26 +218,37 @@ export function RoomPage() {
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[var(--color-bg-base)]">
-        <div className="flex flex-col items-center gap-4">
-          <div className="size-12 animate-spin rounded-full border-b-2 border-[var(--color-accent-cyan)]" />
-          <p className="text-[var(--color-text-secondary)]">Загружаю комнату...</p>
+      <div className="relative grid min-h-screen place-items-center p-6 text-cream">
+        <NightSky seed={13} className="fixed" />
+        <div className="relative grid justify-items-center gap-5 text-center">
+          <CatSticker pose="stretch" width={220} />
+          <h1 className="font-display text-4xl font-medium italic">Комната просыпается</h1>
+          <div className="cw-progress w-56" role="progressbar" aria-label="Загружаем комнату" />
         </div>
       </div>
     );
   }
 
   if (error || !room) {
+    const notFound = !error || (isAxiosError(error) && error.response?.status === 404);
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-[var(--color-bg-base)] p-4">
-        <h2 className="mb-4 text-2xl font-bold text-red-400">Комната не найдена</h2>
-        <p className="mb-6 text-[var(--color-text-secondary)]">Код "{code}" не существует</p>
-        <button
-          onClick={() => navigate('/')}
-          className="rounded-xl bg-[var(--color-accent-cyan)] px-6 py-3 font-semibold text-white transition-opacity hover:opacity-90"
-        >
-          На главную
-        </button>
+      <div className="relative grid min-h-screen place-items-center p-6 text-cream">
+        <NightSky seed={21} className="fixed" />
+        <main className="relative grid max-w-[460px] justify-items-center gap-4 rounded border border-line bg-night p-8 text-center">
+          <CatSticker pose="sit" width={140} />
+          <span className="cw-label">Код {code}</span>
+          <h1 className="font-display text-[44px] font-medium italic leading-none">
+            {notFound ? 'Такой комнаты нет' : 'Комната не открылась'}
+          </h1>
+          <p className="text-cream-dim">
+            {notFound
+              ? 'Проверьте код: возможно, в нём опечатка.'
+              : 'Проверьте интернет и обновите страницу.'}
+          </p>
+          <button type="button" onClick={() => navigate('/')} className="cw-btn cw-btn-primary mt-2">
+            На главную
+          </button>
+        </main>
       </div>
     );
   }
@@ -194,7 +256,7 @@ export function RoomPage() {
   const videoUrl = room.current_movie_url || '';
 
   return (
-    <div className="flex min-h-screen flex-col bg-[var(--color-bg-base)] text-[var(--color-text-primary)]">
+    <div className="flex min-h-screen flex-col bg-ink text-cream">
       <RoomHeader
         title={room.title}
         code={room.code}
@@ -202,81 +264,48 @@ export function RoomPage() {
         isConnected={isConnected}
         participantsCount={room.participants_count}
         maxParticipants={room.max_participants}
-        onBack={() => navigate('/')}
-        onCopyCode={handleCopyCode}
+        linkCopied={linkCopied}
+        onCopyLink={handleCopyLink}
       />
 
       {isHost && (
         <form
-          onSubmit={async (e) => {
-            e.preventDefault();
-            if (isSubmitting) return;
-            setIsSubmitting(true);
-            const formData = new FormData(e.currentTarget);
-            const url = formData.get('videoUrl') as string;
-            if (!url.trim()) {
-              setIsSubmitting(false);
-              return;
-            }
-            const manualTitle = (formData.get('videoTitle') as string)?.trim() || '';
-            const title = selectedMovie?.title || manualTitle || undefined;
-            try {
-              await api.patch(`/rooms/${code}/video`, { url: url.trim(), title });
-              queryClient.setQueryData(['room', code], (oldData: any) => {
-                if (!oldData) return oldData;
-                return {
-                  ...oldData,
-                  current_movie_url: url.trim(),
-                  current_movie_title: title ? `${oldData.title} — ${title}` : oldData.title,
-                  current_position: 0,
-                  is_playing: false,
-                };
-              });
-              (e.target as HTMLFormElement).reset();
-            } catch (err) {
-              console.error('Ошибка обновления видео:', err);
-              alert('Не удалось обновить видео');
-            } finally {
-              setIsSubmitting(false);
-            }
-          }}
-          className="flex items-center gap-2 border-b border-[var(--color-border-subtle)] bg-white/[0.03] p-2.5 md:p-3"
+          onSubmit={handleVideoSubmit}
+          className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 md:px-6"
         >
-          <span className="whitespace-nowrap text-xs text-[var(--color-text-secondary)] md:text-sm">🎬</span>
+          <label htmlFor="video-url" className="cw-label mr-1">
+            Видео
+          </label>
           <input
+            id="video-url"
             name="videoUrl"
             type="text"
-            placeholder="Ссылка на YouTube или Rutube..."
-            className="min-w-0 flex-1 rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-bg-elevated)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:ring-1 focus:ring-[var(--color-accent-cyan)]"
+            placeholder="Ссылка на YouTube, Rutube или видеофайл"
+            autoComplete="off"
+            className="cw-field w-auto min-w-0 flex-[2_1_240px] py-2.5 text-sm"
           />
           {!selectedMovie && (
             <input
+              id="video-title"
               name="videoTitle"
               type="text"
               maxLength={90}
-              placeholder="Название фильма (необязательно)"
-              className="min-w-0 flex-1 rounded-lg border border-[var(--color-border-subtle)] bg-[var(--color-bg-elevated)] px-3 py-2 text-sm text-[var(--color-text-primary)] outline-none focus:ring-1 focus:ring-[var(--color-accent-cyan)]"
+              placeholder="Название фильма, если хотите"
+              aria-label="Название фильма"
+              autoComplete="off"
+              className="cw-field w-auto min-w-0 flex-[1_1_180px] py-2.5 text-sm"
             />
           )}
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="whitespace-nowrap rounded-lg bg-[var(--color-accent-cyan)] px-3 py-2 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50 md:px-4 md:text-sm"
-          >
-            {isSubmitting ? '...' : 'Загрузить'}
+          <button type="submit" disabled={isSubmitting} className="cw-btn cw-btn-primary px-4 py-3">
+            {isSubmitting ? 'Включаем…' : 'Включить'}
           </button>
+          {videoError && <p className="basis-full text-sm text-coral">{videoError}</p>}
         </form>
       )}
 
-      <main className="flex flex-1 flex-col overflow-hidden lg:flex-row">
-        <div className="flex min-h-[240px] flex-1 flex-col p-4 md:min-h-[400px] md:p-6 lg:min-h-0">
-          <div
-            className="relative flex flex-1 flex-col items-center justify-center overflow-hidden rounded-[20px] border-[1.5px] bg-[#050508]"
-            style={{
-              borderColor: 'rgba(76,224,210,0.9)',
-              boxShadow: '0px 20px 50px -12px rgba(0,0,0,0.5), 0px 0px 60px -6px rgba(76,224,210,0.22)',
-            }}
-          >
+      <main className="flex flex-1 flex-col lg:min-h-0 lg:flex-row">
+        <div className="flex min-h-[260px] flex-1 flex-col gap-3 p-4 md:min-h-[420px] md:p-6 lg:min-h-0">
+          <div className="relative flex flex-1 flex-col overflow-hidden rounded border border-line bg-black">
             <VideoPlayer
               url={videoUrl}
               isHost={isHost}
@@ -289,6 +318,8 @@ export function RoomPage() {
             />
             <ReactionOverlay reactions={activeReactions} />
 
+            {isConnected && <GreetingToast code={room.code} participantsCount={room.participants_count} />}
+
             {isHost && selectedMovie && (
               <MovieBanner
                 title={selectedMovie.title}
@@ -296,25 +327,20 @@ export function RoomPage() {
                 releaseYear={selectedMovie.release_year}
               />
             )}
+          </div>
 
-            <div className="absolute bottom-4 left-1/2 z-30 flex -translate-x-1/2 gap-2 rounded-full border border-white/10 bg-black/60 p-2 backdrop-blur-md md:bottom-6 md:gap-3 md:p-3">
-              {['❤️', '🔥', '😂', '😮', '👏'].map(emoji => (
-                <button
-                  key={emoji}
-                  onClick={() => handleReaction(emoji)}
-                  className="p-1 text-xl transition-transform hover:scale-125 active:scale-95 md:text-2xl"
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-
-            {!videoUrl && (
-              <div className="pointer-events-none absolute left-4 top-4 z-10 flex items-center gap-2 rounded-full border border-white/10 bg-[rgba(13,13,18,0.65)] px-3 py-1.5 text-xs text-[var(--color-text-muted)] backdrop-blur-md">
-                <Film className="size-3.5" />
-                Видео ещё не выбрано
-              </div>
-            )}
+          <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Реакции">
+            <span className="cw-label mr-1">Реакции</span>
+            {REACTIONS.map((emoji) => (
+              <button
+                key={emoji}
+                type="button"
+                onClick={() => handleReaction(emoji)}
+                className="rounded-full border border-coral/40 px-3 py-1.5 text-lg leading-none transition-colors hover:border-coral hover:bg-coral/10 active:translate-y-px"
+              >
+                {emoji}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -325,8 +351,11 @@ export function RoomPage() {
           onChatInputChange={setChatInput}
           onSend={handleSend}
           isConnected={isConnected}
+          code={room.code}
+          currentUsername={user?.username}
         />
       </main>
+
     </div>
   );
 }

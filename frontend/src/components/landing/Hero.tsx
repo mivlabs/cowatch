@@ -20,7 +20,7 @@ export function Hero({ nav, onCreateRoom, roomCode, onRoomCodeChange, onJoin }: 
         {nav}
 
         <div className="grid max-w-[640px] gap-7 self-end">
-          <span className="cw-label">Совместный просмотр · YouTube, Rutube, Vimeo, прямые ссылки</span>
+          <span className="cw-label">Совместный просмотр · YouTube, Rutube, прямые ссылки</span>
           <h1 className="font-display text-[clamp(56px,10vw,112px)] font-medium italic leading-[1.02] text-balance">
             Одно кино на&nbsp;всех, где бы вы ни&nbsp;были
           </h1>

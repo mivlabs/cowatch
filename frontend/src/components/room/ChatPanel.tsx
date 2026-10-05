@@ -1,7 +1,5 @@
 import { forwardRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Send, MessageSquare } from 'lucide-react';
-import { Avatar } from '@/components/Avatar';
+import { cn } from '@/lib/utils';
 import type { WSMessage } from '@/hooks/useRoomWebSocket';
 
 interface ChatPanelProps {
@@ -10,97 +8,89 @@ interface ChatPanelProps {
   onChatInputChange: (value: string) => void;
   onSend: (e: React.FormEvent) => void;
   isConnected: boolean;
+  code: string;
+  /** Own messages get a quieter name colour, everyone else's is gold. */
+  currentUsername?: string;
 }
 
-const NAME_ACCENTS = [
-  'var(--color-accent-cyan)',
-  'var(--color-accent-magenta)',
-  'var(--color-brand-amber)',
-];
-
-function accentForName(name: string) {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-  return NAME_ACCENTS[Math.abs(hash) % NAME_ACCENTS.length];
-}
-
+/** Room chat in a small pixel-framed window. */
 export const ChatPanel = forwardRef<HTMLDivElement, ChatPanelProps>(function ChatPanel(
-  { messages, chatInput, onChatInputChange, onSend, isConnected },
+  { messages, chatInput, onChatInputChange, onSend, isConnected, code, currentUsername },
   messagesEndRef,
 ) {
   const visibleMessages = messages.filter(
     (msg) => msg.type === 'chat_message' || msg.type === 'system' || msg.type === 'connected',
   );
+  const hasChat = visibleMessages.some((msg) => msg.type === 'chat_message');
 
   return (
-    <div className="flex h-[40vh] w-full flex-col border-t border-[var(--color-border-subtle)] bg-white/[0.04] lg:h-auto lg:w-[360px] lg:border-l lg:border-t-0">
-      <div className="flex shrink-0 items-center gap-2 border-b border-[var(--color-border-subtle)] px-5 py-[18px]">
-        <MessageSquare className="size-4 text-[var(--color-text-secondary)]" />
-        <p className="text-[15px] font-semibold text-[var(--color-text-primary)]">Чат комнаты</p>
-      </div>
+    <aside className="flex h-[55vh] min-h-[360px] w-full shrink-0 flex-col px-4 pb-4 md:px-6 md:pb-6 lg:h-auto lg:w-[380px] lg:pl-0 lg:pt-6">
+      <section className="cw-win flex min-h-0 flex-1 flex-col" aria-label="Чат комнаты">
+        <div className="cw-win-bar">
+          <span>чат</span>
+          <span className="tracking-[0.2em]">{code}</span>
+        </div>
 
-      <div className="flex-1 space-y-4 overflow-y-auto p-4 md:p-5">
-        <AnimatePresence>
-          {visibleMessages.map((msg, index) => {
-            if (msg.type === 'system' || msg.type === 'connected') {
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          <ol className="grid gap-3">
+            {visibleMessages.map((msg, index) => {
+              if (msg.type === 'system' || msg.type === 'connected') {
+                return (
+                  <li key={index} className="text-center font-mono text-xs leading-relaxed text-cream-dim">
+                    {msg.type === 'connected' ? msg.message : msg.content}
+                  </li>
+                );
+              }
+
+              const mine = msg.username === currentUsername;
               return (
-                <motion.div
-                  key={index}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="py-2 text-center text-xs text-[var(--color-text-muted)]"
-                >
-                  {msg.type === 'connected' ? msg.message : msg.content}
-                </motion.div>
+                <li key={index} className="grid gap-0.5">
+                  <div className="flex items-baseline gap-2">
+                    <b
+                      className={cn(
+                        'font-mono text-xs font-medium tracking-[0.06em]',
+                        mine ? 'text-cream-dim' : 'text-gold',
+                      )}
+                    >
+                      {msg.username}
+                    </b>
+                    <time dateTime={msg.timestamp} className="font-mono text-[10px] text-cream-dim/70">
+                      {new Date(msg.timestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                    </time>
+                  </div>
+                  <p className="break-words text-[15px] leading-snug">{msg.content}</p>
+                </li>
               );
-            }
+            })}
+          </ol>
+          {!hasChat && (
+            <p className="mt-6 text-center text-sm text-cream-dim">Тут пока тихо. Напишите первым.</p>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
 
-            return (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.2 }}
-                className="flex flex-col gap-1"
-              >
-                <div className="flex items-center gap-2">
-                  <Avatar username={msg.username} size="sm" />
-                  <span className="text-xs font-medium" style={{ color: accentForName(msg.username) }}>
-                    {msg.username}
-                  </span>
-                  <span className="text-[10px] text-[var(--color-text-muted)]">
-                    {new Date(msg.timestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                </div>
-                <div className="w-fit max-w-[240px] break-words rounded-2xl bg-[var(--color-bg-elevated)] px-3 py-2.5 text-sm text-[var(--color-text-primary)]">
-                  {msg.content}
-                </div>
-              </motion.div>
-            );
-          })}
-        </AnimatePresence>
-        <div ref={messagesEndRef} />
-      </div>
-
-      <form onSubmit={onSend} className="flex shrink-0 items-center gap-2.5 border-t border-[var(--color-border-subtle)] px-4 py-4 md:px-5">
-        <input
-          type="text"
-          placeholder={isConnected ? 'Написать сообщение…' : 'Подключение…'}
-          value={chatInput}
-          onChange={(e) => onChatInputChange(e.target.value)}
-          disabled={!isConnected}
-          className="min-w-0 flex-1 rounded-full bg-[var(--color-bg-elevated)] px-4 py-2.5 text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-muted)] outline-none transition-opacity focus:ring-2 focus:ring-[var(--color-accent-cyan)] disabled:opacity-50"
-        />
-        <button
-          type="submit"
-          disabled={!isConnected || !chatInput.trim()}
-          className="flex size-10 shrink-0 items-center justify-center rounded-full text-[#1a1a24] transition-opacity disabled:opacity-40"
-          style={{ backgroundImage: 'linear-gradient(1deg, #fafaff 5.66%, #adb2d9 52.83%, #d9dbf2 100%)' }}
-        >
-          <Send className="size-4" />
-        </button>
-      </form>
-    </div>
+        <form onSubmit={onSend} className="flex border-t-2 border-cream">
+          <input
+            id="chat-message"
+            type="text"
+            aria-label="Сообщение в чат"
+            placeholder={isConnected ? 'Написать в чат' : 'Подключаемся…'}
+            value={chatInput}
+            onChange={(e) => onChatInputChange(e.target.value)}
+            disabled={!isConnected}
+            autoComplete="off"
+            className="min-w-0 flex-1 bg-transparent px-3.5 py-3 text-[15px] text-cream outline-none placeholder:text-cream-dim/70 focus-visible:bg-ink/50 disabled:opacity-50"
+          />
+          <button
+            type="submit"
+            disabled={!isConnected || !chatInput.trim()}
+            aria-label="Отправить"
+            className="bg-cream px-4 font-pixel text-sm text-ink transition-opacity disabled:opacity-60"
+          >
+            ОТПР
+          </button>
+        </form>
+      </section>
+    </aside>
   );
 });

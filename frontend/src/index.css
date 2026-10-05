@@ -192,9 +192,33 @@ body {
   transform-origin: 50% 90%;
 }
 
+/* Indeterminate loading line: a gold segment sliding along a faint track. */
+.cw-progress {
+  position: relative;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--color-line);
+}
+.cw-progress::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 40%;
+  background: var(--color-gold);
+  animation: cw-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes cw-slide {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cw-btn { transition: none; }
   .cw-breathe { animation: none; }
+  .cw-progress::after { animation: none; transform: translateX(75%); }
 }
 
 /*

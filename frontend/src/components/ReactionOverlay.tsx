@@ -1,5 +1,14 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import type { VideoReaction } from '@/hooks/useRoomWebSocket';
+import { reactionGlyph } from '@/lib/utils';
+
+// Стабильное смещение по X для каждой реакции (от -30px до +30px), чтобы эмодзи
+// не летели одной линией и не дёргались при перерисовке списка.
+function offsetFor(key: string) {
+  let hash = 0;
+  for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) | 0;
+  return (Math.abs(hash) % 61) - 30;
+}
 
 interface ReactionOverlayProps {
   reactions: VideoReaction[];
@@ -10,12 +19,12 @@ export function ReactionOverlay({ reactions }: ReactionOverlayProps) {
     <div className="absolute inset-0 pointer-events-none overflow-hidden z-20">
       <AnimatePresence>
         {reactions.map((reaction) => {
-          // Генерируем случайное смещение по X, чтобы эмодзи не летели одной линией
-          const randomX = Math.random() * 60 - 30; // от -30px до +30px
+          const key = `${reaction.timestamp}-${reaction.user_id}`;
+          const randomX = offsetFor(key);
           
           return (
             <motion.div
-              key={`${reaction.timestamp}-${reaction.user_id}`}
+              key={key}
               initial={{ 
                 y: 0, 
                 x: randomX, 
@@ -32,10 +41,10 @@ export function ReactionOverlay({ reactions }: ReactionOverlayProps) {
                 duration: 2.5, 
                 ease: "easeOut" 
               }}
-              className="absolute bottom-10 left-1/2 text-4xl filter drop-shadow-lg"
+              className="cw-emoji absolute bottom-10 left-1/2 text-4xl text-cream [text-shadow:0_2px_10px_rgb(7_10_28/0.8)]"
               style={{ marginLeft: randomX }}
             >
-              {reaction.emoji}
+              {reactionGlyph(reaction.emoji)}
             </motion.div>
           );
         })}

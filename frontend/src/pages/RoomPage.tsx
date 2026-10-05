@@ -13,6 +13,7 @@ import { MovieBanner } from '@/components/room/MovieBanner';
 import { ChatPanel } from '@/components/room/ChatPanel';
 import { GreetingToast } from '@/components/room/GreetingToast';
 import { NightSky } from '@/components/brand/NightSky';
+import { reactionGlyph } from '@/lib/utils';
 import { CatSticker } from '@/components/brand/CatSticker';
 import {
   useRoomWebSocket,
@@ -336,9 +337,9 @@ export function RoomPage() {
                 key={emoji}
                 type="button"
                 onClick={() => handleReaction(emoji)}
-                className="rounded-full border border-coral/40 px-3 py-1.5 text-lg leading-none transition-colors hover:border-coral hover:bg-coral/10 active:translate-y-px"
+                className="cw-emoji rounded-full border border-coral/40 px-3 py-1.5 text-lg leading-none transition-colors hover:border-coral hover:bg-coral/10 active:translate-y-px"
               >
-                {emoji}
+                {reactionGlyph(emoji)}
               </button>
             ))}
           </div>

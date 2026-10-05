@@ -3,11 +3,14 @@ import { CATS } from '@/components/brand/cats';
 
 const STAR = 'M50 8 L61 37 L93 38 L68 58 L77 90 L50 72 L23 90 L32 58 L7 38 L39 37 Z';
 
-/** The landing illustration: the sitting cat on top of a moon, with two sticker stars. */
-export function MoonCat({ className }: { className?: string }) {
+/**
+ * The sitting cat on top of a moon, with two sticker stars. The landing hero
+ * crops the moon at the bottom edge; `fullMoon` shows the whole circle.
+ */
+export function MoonCat({ className, fullMoon = false }: { className?: string; fullMoon?: boolean }) {
   const moonId = useId();
   return (
-    <svg viewBox="0 0 400 480" className={className} role="img" aria-label="Котик сидит на луне">
+    <svg viewBox={fullMoon ? '0 0 400 545' : '0 0 400 480'} className={className} role="img" aria-label="Котик сидит на луне">
       <defs>
         <radialGradient id={moonId} cx=".42" cy=".38" r=".7">
           <stop offset="0" stopColor="#e9e6dc" />

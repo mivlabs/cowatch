@@ -6,6 +6,7 @@ import { RegisterPage } from './pages/RegisterPage';
 import { CreateRoomPage } from './pages/CreateRoomPage';
 import { useAuth } from './contexts/AuthContext';
 import { ProfilePage } from '@/pages/ProfilePage';
+import { NotFoundPage } from '@/pages/NotFoundPage';
 
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -37,6 +38,7 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </BrowserRouter>
   );

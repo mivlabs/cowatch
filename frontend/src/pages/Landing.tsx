@@ -95,6 +95,10 @@ export function Landing() {
       <Link to="/" aria-label="CoWatch, на главную" className="mr-auto">
         <Logo />
       </Link>
+      {/* On phones the footer link is enough: a third item would wrap the nav under the logo. */}
+      <Link to="/about" className={`hidden sm:inline ${NAV_LINK}`}>
+        О проекте
+      </Link>
       {isAuthenticated ? (
         <>
           <button

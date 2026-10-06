@@ -6,7 +6,10 @@ import { RegisterPage } from './pages/RegisterPage';
 import { CreateRoomPage } from './pages/CreateRoomPage';
 import { useAuth } from './contexts/AuthContext';
 import { ProfilePage } from '@/pages/ProfilePage';
+import { AboutPage } from '@/pages/AboutPage';
+import { PrivacyPage } from '@/pages/PrivacyPage';
 import { NotFoundPage } from '@/pages/NotFoundPage';
+import { CookieNotice } from '@/components/CookieNotice';
 
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -22,6 +25,8 @@ function App() {
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/" element={<Landing />} />
         <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/about" element={<AboutPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
         <Route
           path="/create"
           element={
@@ -40,6 +45,7 @@ function App() {
         />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
+      <CookieNotice />
     </BrowserRouter>
   );
 }

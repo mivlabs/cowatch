@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Logo } from '@/components/Logo';
 import { TmdbLogo } from '@/components/brand/TmdbLogo';
-import { CONTACT_EMAIL, CONTACT_TELEGRAM, CONTACT_TELEGRAM_URL } from '@/lib/contacts';
+import { CONTACT_EMAIL, CONTACT_TELEGRAM, CONTACT_TELEGRAM_URL, SUPPORT_URL } from '@/lib/contacts';
 
 const FOOTER_LINK = 'underline underline-offset-[3px] transition-colors hover:text-gold';
 
@@ -21,6 +21,9 @@ export function SiteFooter() {
         <Link to="/privacy" className={`cw-label ${FOOTER_LINK}`}>
           Конфиденциальность
         </Link>
+        <a href={SUPPORT_URL} target="_blank" rel="noopener noreferrer" className={`cw-label ${FOOTER_LINK} text-gold`}>
+          Поддержать
+        </a>
         <a href={`mailto:${CONTACT_EMAIL}`} className={`cw-label ${FOOTER_LINK}`}>
           {CONTACT_EMAIL}
         </a>

@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { StaticPage, PageSection } from '@/components/StaticPage';
 import { CatSticker } from '@/components/brand/CatSticker';
-import { CONTACT_EMAIL, CONTACT_TELEGRAM, CONTACT_TELEGRAM_URL, GITHUB_URL } from '@/lib/contacts';
+import { CONTACT_EMAIL, CONTACT_TELEGRAM, CONTACT_TELEGRAM_URL, GITHUB_URL, SUPPORT_URL } from '@/lib/contacts';
 
 const TEXT_LINK = 'text-gold underline underline-offset-[3px] transition-colors hover:text-cream';
 
@@ -42,15 +42,21 @@ export function AboutPage() {
         </p>
       </PageSection>
 
-      <PageSection label="Поддержать" title="Скоро здесь будет кнопка">
+      <PageSection label="Поддержать" title="Оплатить котикам ночь в кино">
         <div className="grid gap-4 sm:grid-cols-[96px_1fr] sm:items-start">
           <CatSticker pose="wave" width={96} className="shrink-0" />
           <div className="grid gap-4">
             <p>
-              Способ поддержать проект деньгами появится на этой странице позже. Пока лучшая помощь другая: позвать
-              друзей в комнату, рассказать о сервисе и написать, что сломалось или чего не хватает.
+              CoWatch бесплатный и без рекламы, а серверы и каталог фильмов стоят денег. Если сервис вам пригодился,
+              можно поддержать его на Boosty: разово или подпиской, сколько захотите.
             </p>
+            <div>
+              <a href={SUPPORT_URL} target="_blank" rel="noopener noreferrer" className="cw-btn cw-btn-primary">
+                Поддержать на Boosty
+              </a>
+            </div>
             <p className="text-cream-dim">
+              Помочь можно и без денег: позвать друзей в комнату, рассказать о сервисе или написать, что сломалось.
               Если хочется помочь кодом, загляните в{' '}
               <a href={`${GITHUB_URL}/issues`} target="_blank" rel="noopener noreferrer" className={TEXT_LINK}>
                 issues на GitHub

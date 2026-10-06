@@ -246,6 +246,10 @@ class ContentRecommender:
     # фильм, и без квоты топ гостя состоял бы из одних сериалов — а CoWatch
     # всё-таки про "собраться и посмотреть фильм".
     movies_per_tv: int = 2
+    # Персональная выдача: кандидаты слабее relative_floor * лучший счёт
+    # не берутся даже ради квоты (иначе к "Интерстеллару" подмешивался
+    # рестлинг — единственный сериал с ненулевой похожестью).
+    relative_floor: float = 0.6
 
     def most_popular(self, k: int | None = None, exclude: set[int] | None = None) -> list[dict]:
         k = k or self.k_default
@@ -315,7 +319,11 @@ class ContentRecommender:
         # Та же квота фильмы/сериалы, что и в холодном старте: у того, кто
         # смотрел одну драму, похожих по жанрам сериалов больше, чем фильмов,
         # и без квоты персональная выдача превращалась в список сериалов.
-        picked = self._pick_mixed(scores, k=k, exclude=watched, min_score=0.0)
+        # Квота не должна протаскивать слабых кандидатов: сериал попадает в
+        # выдачу, только если он не сильно хуже лучшего совпадения, иначе
+        # остаток добирается популярным.
+        min_score = max(0.0, float(scores.max()) * self.relative_floor)
+        picked = self._pick_mixed(scores, k=k, exclude=watched, min_score=min_score)
         items = [
             self._as_item(int(self._content_df.iloc[idx]["content_id"]), score=float(scores[idx]), reason="personalized")
             for idx in picked

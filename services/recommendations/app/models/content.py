@@ -29,6 +29,12 @@ class ContentItem(Base):
     overview = Column(Text, nullable=True, default="")
     genres = Column(JSONB, nullable=False, default=list)  # ["Action", "Sci-Fi"]
     popularity = Column(Float, nullable=True, default=0.0)
+    # Рейтинг TMDB (0..10) и число голосов — нужны ранжированию: без них
+    # холодный старт и персональная выдача не отличают "Интерстеллар" от
+    # никому не известной драмы с теми же жанрами (см. recommender.py).
+    vote_average = Column(Float, nullable=True, default=0.0)
+    vote_count = Column(Integer, nullable=True, default=0)
+    original_language = Column(String(10), nullable=True)
     poster_path = Column(String(300), nullable=True)
     release_year = Column(Integer, nullable=True)
 

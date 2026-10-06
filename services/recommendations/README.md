@@ -28,11 +28,23 @@ Vimeo, кстати, тоже упоминался в старом коде пл
   малом числе пользователей и просмотров (см. `notebooks/eda_watch_patterns.ipynb`)
   collaborative filtering не соберёт достаточно сигнала, а content-based
   работает даже с одним просмотром на пользователя.
-- **Cold-start fallback на popularity** — для новых пользователей без истории.
+- **Приор популярности и рейтинга TMDB.** Похожесть умножается на приор из
+  байесовски сглаженного рейтинга и log-популярности, карточки с числом
+  голосов меньше `RECOMMENDATIONS_MIN_VOTES` (50) не рекомендуются. Без
+  этого одинаково похожие по жанрам фильмы шли в случайном порядке и наверх
+  всплывали неизвестные.
+- **Cold-start fallback на popularity** — для новых пользователей и гостей
+  (у гостя id случайный на каждый вход): тот же приор плюс небольшой бонус за
+  реальные совместные просмотры в CoWatch. Раньше "популярное" считалось
+  только по `watch_events`, где было 3 записи — отсюда вечные две карточки.
+- **Модель в памяти, обучается из базы** (`app/services/model_store.py`):
+  при старте и каждые `RETRAIN_INTERVAL_HOURS` (6) сервис синхронизирует
+  просмотры из `rooms_db` и переобучает модель. `POST /admin/retrain` делает
+  то же самое сразу. Файлы в `models/` — только для офлайн-экспериментов.
 - **Каталог из TMDB** (`app/services/tmdb_client.py`, `ml/import_catalog.py`) —
-  листаем готовые подборки "популярное" для movie и tv, идемпотентно
-  сохраняем в `content_items` (upsert по `tmdb_id`). Никакого угадывания —
-  каждая строка гарантированно настоящий фильм/сериал.
+  листаем подборки "popular" и "top_rated" для movie и tv (по 25 страниц),
+  отсеиваем сериалы жанров News/Talk/Soap/Reality и карточки почти без
+  голосов, идемпотентно сохраняем в `content_items` (upsert по `tmdb_id`).
 - **ETL просмотров** (`app/services/etl.py`, `POST /admin/sync-watch-events`)
   синхронизирует `watch_events` из `rooms_db` по `room.content_id` — без
   всякого matching по тексту, комната напрямую ссылается на каталог.
@@ -86,13 +98,19 @@ pip install -r requirements.txt
 
 # 1. загрузить каталог фильмов/сериалов из TMDB (нужен TMDB_API_KEY в .env)
 python -m ml.import_catalog
+# против прод-базы на Railway — публичная строка подключения:
+python -m ml.import_catalog --database-url "postgresql://user:pass@host:port/recommendations_db"
 
-# 2. обучить рекомендатель на демо-сэмпле (реальных watch_events пока мало, см. историю решения)
-python -m ml.train --sample
-
-# 3. поднять API
+# 2. поднять API — модель обучится из базы сама при старте
 uvicorn app.main:app --reload
+
+# офлайн-эксперименты (MLflow, метрики на MovieLens/демо-сэмпле)
+python -m ml.train --sample
 ```
+
+Переменные окружения сервиса на хостинге: `DATABASE_URL`, `ROOMS_DATABASE_URL`
+(без неё просмотры не синхронизируются, модель обучается на том, что уже есть
+в `watch_events`), `RETRAIN_INTERVAL_HOURS`, `RECOMMENDATIONS_MIN_VOTES`.
 
 ## Roadmap (недели 3-4)
 

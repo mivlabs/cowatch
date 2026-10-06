@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     model_dir: str = os.getenv("MODEL_DIR", "models")
     default_top_k: int = 10
 
+    # Модель обучается из базы при старте и переобучается раз в N часов
+    # (см. app/services/model_store.py). min_votes — карточки с меньшим
+    # числом голосов TMDB в рекомендации не попадают.
+    retrain_interval_hours: float = float(os.getenv("RETRAIN_INTERVAL_HOURS", "6"))
+    min_votes: int = int(os.getenv("RECOMMENDATIONS_MIN_VOTES", "50"))
+
     class Config:
         env_file = str(_env_path) if _env_path and _env_path.exists() else None
         extra = "ignore"

@@ -7,9 +7,10 @@ from pydantic import BaseModel
 class RecommendedItem(BaseModel):
     content_id: Optional[int]
     title: str
+    media_type: Optional[str] = None  # "movie" | "tv"
     genres: list[str] = []
     score: float
-    reason: str  # "personalized" | "popular_fallback" | "similar_to"
+    reason: str  # "personalized" | "popular_fallback"
     poster_path: Optional[str] = None
     release_year: Optional[int] = None
 
@@ -26,9 +27,11 @@ class ModelInfo(BaseModel):
     model_version: Optional[str]
     trained_at: Optional[datetime]
     n_items: int
+    n_eligible: Optional[int] = None
     n_users: int
     n_interactions: int
     precision_at_k: Optional[float] = None
     recall_at_k: Optional[float] = None
     hit_rate_at_k: Optional[float] = None
     k: int = 10
+    source: Optional[str] = None

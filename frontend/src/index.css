@@ -124,6 +124,24 @@ body {
   outline-offset: 3px;
 }
 
+/*
+ * Telegram Mini App screen (/tg). The SDK publishes the visible height and the
+ * safe areas as CSS variables; outside Telegram they are unset and the
+ * fallbacks apply. The room fills exactly one viewport so the chat input
+ * stays above the keyboard and the home bar.
+ */
+.tg-screen {
+  min-height: 100dvh;
+  min-height: var(--tg-viewport-stable-height, 100dvh);
+  padding-top: calc(var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px));
+  padding-bottom: var(--tg-safe-area-inset-bottom, 0px);
+  background-color: var(--color-ink);
+}
+.tg-room {
+  height: 100dvh;
+  height: var(--tg-viewport-stable-height, 100dvh);
+}
+
 @keyframes cw-breathe {
   50% { transform: scale(1.025, 1.04); }
 }

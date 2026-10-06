@@ -83,7 +83,9 @@ async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
 @router.post("/login", response_model=Token)
 async def login(user_in: UserLogin, db: AsyncSession = Depends(get_db)):
     user = await get_user_by_email(db, user_in.email)
-    if not user or not verify_password(user_in.password, user.hashed_password):
+    # У аккаунтов из Telegram пароля нет (hashed_password = NULL) — по почте
+    # они и так не найдутся, но bcrypt на None упал бы 500-й вместо 401.
+    if not user or not user.hashed_password or not verify_password(user_in.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",

@@ -42,6 +42,13 @@ authApi.interceptors.request.use((config) => {
   return config;
 });
 
+// Куда уходить после просроченного токена: внутри Telegram Mini App (/tg) — на
+// её главную, где вход через initData повторится сам; на сайте — на главную.
+function signedOutHome() {
+  const { pathname } = window.location;
+  return pathname === '/tg' || pathname.startsWith('/tg/') ? '/tg' : '/';
+}
+
 // Перехватчик ответов (ловит просроченные токены)
 api.interceptors.response.use(
   (response) => response,
@@ -50,7 +57,7 @@ api.interceptors.response.use(
       console.warn('⚠️ Токен истек. Автоматический выход...');
       localStorage.removeItem('cowatch_token');
       localStorage.removeItem('cowatch_user');
-      window.location.href = '/';
+      window.location.href = signedOutHome();
     }
     return Promise.reject(error);
   }
@@ -59,10 +66,12 @@ api.interceptors.response.use(
 authApi.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    // 401 на самом входе через Telegram — не «токен истёк», а отказ в логине:
+    // его показывает TelegramProvider, перезагружать страницу не нужно.
+    if (error.response?.status === 401 && !String(error.config?.url).includes('/auth/telegram')) {
       localStorage.removeItem('cowatch_token');
       localStorage.removeItem('cowatch_user');
-      window.location.href = '/';
+      window.location.href = signedOutHome();
     }
     return Promise.reject(error);
   }

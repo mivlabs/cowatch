@@ -20,3 +20,11 @@ class RecordHistoryRequest(BaseModel):
 class InternalActionResponse(BaseModel):
     granted: bool
     reason: str | None = None
+
+
+class GrantAchievementResponse(InternalActionResponse):
+    # Название и иконка выданной наклейки — чтобы notifications мог сразу
+    # опубликовать achievement.granted для Telegram-бота, не зная списка ачивок.
+    code: str | None = None
+    title: str | None = None
+    icon: str | None = None

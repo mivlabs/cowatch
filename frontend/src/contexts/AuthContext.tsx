@@ -6,6 +6,8 @@ export interface User {
   email?: string;
   username: string;
   isGuest: boolean;
+  /** Set for accounts that signed in through the Telegram Mini App. */
+  telegramId?: number;
 }
 
 interface AuthContextType {
@@ -14,9 +16,13 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, username: string) => Promise<void>;
   loginAsGuest: (nickname: string) => Promise<void>;
+  /** Telegram Mini App sign-in: initData is verified by auth with the bot token. */
+  loginWithTelegram: (initData: string) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
   isGuest: boolean;
+  /** Always true for children: the provider renders them only after reading storage. */
+  isInitialized: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -110,6 +116,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const loginWithTelegram = async (initData: string) => {
+    const response = await authApi.post('/auth/telegram', { init_data: initData });
+    const { access_token, user: tgUser } = response.data as {
+      access_token: string;
+      user: { id: number; username: string; telegram_id: number };
+    };
+
+    localStorage.setItem('cowatch_token', access_token);
+    setToken(access_token);
+
+    const userData: User = {
+      id: tgUser.id,
+      username: tgUser.username,
+      isGuest: false,
+      telegramId: tgUser.telegram_id,
+    };
+    localStorage.setItem('cowatch_user', JSON.stringify(userData));
+    setUser(userData);
+  };
+
   const logout = () => {
     localStorage.removeItem('cowatch_token');
     localStorage.removeItem('cowatch_user');
@@ -129,9 +155,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         register,
         loginAsGuest,
+        loginWithTelegram,
         logout,
         isAuthenticated: !!user,
         isGuest: user?.isGuest || false,
+        isInitialized,
       }}
     >
       {children}

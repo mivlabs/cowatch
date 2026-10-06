@@ -5,8 +5,9 @@ from contextlib import asynccontextmanager
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.database import engine, Base, async_session
-from app.routers import auth, internal
+from app.routers import auth, internal, telegram
 from app.services.achievement_service import ensure_achievements_schema, seed_achievements
+from app.services.telegram import ensure_users_schema, telegram_login_enabled
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("uvicorn.error")
@@ -33,9 +34,15 @@ async def lifespan(app: FastAPI):
     # create_all не добавляет колонки в существующие таблицы — для старой
     # таблицы achievements (без code/category/sort_order) нужна эта миграция.
     await ensure_achievements_schema(engine)
+    # Старая таблица users: добавить telegram_id, снять NOT NULL с email/пароля.
+    await ensure_users_schema(engine)
     async with async_session() as db:
         await seed_achievements(db)
     logger.info("✅ [AUTH] Seed-ачивки на месте!")
+    if telegram_login_enabled():
+        logger.info("✅ [AUTH] Вход через Telegram включён")
+    else:
+        logger.warning("⚠️ [AUTH] TELEGRAM_BOT_TOKEN не задан — /auth/telegram отвечает 503")
 
     yield
     logger.info("🛑 [AUTH] Остановка приложения...")
@@ -59,6 +66,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
+app.include_router(telegram.router, prefix="/auth")
 app.include_router(internal.router)
 
 @app.get("/health")

@@ -28,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        service: [auth, rooms, messages, notifications, recommendations]
+        service: [auth, rooms, messages, notifications, recommendations, telegram_bot]
     services:
       postgres:
         image: postgres:16-alpine

@@ -52,7 +52,8 @@ async def test_grant_achievement_is_idempotent(client):
         headers=_headers(),
     )
     assert first.status_code == 200
-    assert first.json() == {"granted": True, "reason": None}
+    assert first.json()["granted"] is True
+    assert first.json()["title"] == "Хозяин вечеринки"
 
     second = await client.post(
         "/internal/achievements/grant",
@@ -60,7 +61,8 @@ async def test_grant_achievement_is_idempotent(client):
         headers=_headers(),
     )
     assert second.status_code == 200
-    assert second.json() == {"granted": False, "reason": "already_granted"}
+    assert second.json()["granted"] is False
+    assert second.json()["reason"] == "already_granted"
 
     profile_resp = await client.get(f"/auth/profile/{user_id}")
     unlocked = [a["code"] for a in profile_resp.json()["achievements"] if a["unlocked_at"]]
@@ -82,7 +84,7 @@ async def test_grant_achievement_accepts_legacy_title(client):
         json={"user_id": user_id, "achievement_title": "Марафонец"},
         headers=_headers(),
     )
-    assert resp.json() == {"granted": True, "reason": None}
+    assert resp.json()["granted"] is True
 
     resp = await client.post(
         "/internal/achievements/grant",

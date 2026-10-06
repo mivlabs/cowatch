@@ -19,15 +19,26 @@ X-Internal-Secret и должен совпадать со значением INT
 import hmac
 import os
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
+from app.models.user import User
 from app.schemas.internal import (
     GrantAchievementRequest,
+    GrantAchievementResponse,
     InternalActionResponse,
     RecordHistoryRequest,
 )
+from app.schemas.telegram import (
+    InternalTelegramTokenRequest,
+    TelegramAuthResponse,
+    TelegramLink,
+    TelegramLinksResponse,
+    TelegramUserResponse,
+)
+from app.services import telegram
 from app.services.achievement_service import (
     LEGACY_TITLE_TO_CODE,
     grant_achievement,
@@ -60,7 +71,8 @@ def verify_internal_secret(x_internal_secret: str = Header(default="")) -> None:
 
 @router.post(
     "/achievements/grant",
-    response_model=InternalActionResponse,
+    response_model=GrantAchievementResponse,
+    response_model_exclude_none=True,
     dependencies=[Depends(verify_internal_secret)],
 )
 async def grant_achievement_endpoint(
@@ -69,9 +81,71 @@ async def grant_achievement_endpoint(
 ):
     code = req.achievement_code or LEGACY_TITLE_TO_CODE.get(req.achievement_title or "")
     if code is None:
-        return InternalActionResponse(granted=False, reason="unknown_achievement")
+        return GrantAchievementResponse(granted=False, reason="unknown_achievement")
     result = await grant_achievement(db, req.user_id, code)
-    return InternalActionResponse(granted=result.granted, reason=result.reason)
+    return GrantAchievementResponse(
+        granted=result.granted,
+        reason=result.reason,
+        code=result.code,
+        title=result.title,
+        icon=result.icon,
+    )
+
+
+@router.post(
+    "/telegram/token",
+    response_model=TelegramAuthResponse,
+    dependencies=[Depends(verify_internal_secret)],
+)
+async def telegram_token_endpoint(
+    req: InternalTelegramTokenRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Токен CoWatch для пользователя Telegram по его telegram_id — для бота.
+
+    Бот уже знает, кто ему пишет (Telegram доставляет апдейты только через
+    токен бота), поэтому initData здесь не нужен. Эндпоинт внутренний:
+    снаружи по нему можно было бы войти под кем угодно, отсюда общий секрет.
+    """
+    tg_user = telegram.telegram_user_from_fields(
+        req.telegram_id,
+        first_name=req.first_name,
+        last_name=req.last_name,
+        username=req.username,
+    )
+    user, is_new = await telegram.get_or_create_telegram_user(db, tg_user)
+    access_token, refresh_token = telegram.issue_tokens(user)
+    return TelegramAuthResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        user=TelegramUserResponse(
+            id=user.id, username=user.username, telegram_id=user.telegram_id, is_new=is_new
+        ),
+    )
+
+
+@router.get(
+    "/telegram/users",
+    response_model=TelegramLinksResponse,
+    dependencies=[Depends(verify_internal_secret)],
+)
+async def telegram_users_endpoint(
+    user_ids: list[int] = Query(..., max_length=100),
+    db: AsyncSession = Depends(get_db),
+):
+    """Какие из этих user_id привязаны к Telegram — чтобы бот знал, кому
+    можно написать (хосту комнаты, получателю наклейки)."""
+    result = await db.execute(
+        select(User.id, User.telegram_id, User.username).where(
+            User.id.in_(user_ids), User.telegram_id.is_not(None)
+        )
+    )
+    return TelegramLinksResponse(
+        users=[
+            TelegramLink(user_id=user_id, telegram_id=telegram_id, username=username)
+            for user_id, telegram_id, username in result.all()
+        ]
+    )
 
 
 @router.post(

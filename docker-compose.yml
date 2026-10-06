@@ -63,6 +63,8 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/auth_db
       REDIS_URL: redis://redis:6379/0
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:?Set INTERNAL_API_SECRET in .env - no default, see internal.py}
+      # Без токена вход через Telegram Mini App отключён (/auth/telegram -> 503)
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -175,6 +177,36 @@ services:
     volumes:
       - ./services/notifications:/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Telegram-бот (services/telegram_bot/README.md). В профиле telegram, чтобы
+  # без TELEGRAM_BOT_TOKEN в .env остальной проект поднимался как раньше:
+  #   docker compose --profile telegram up -d telegram_bot
+  telegram_bot:
+    build: ./services/telegram_bot
+    container_name: realtime_telegram_bot
+    profiles: ["telegram"]
+    ports:
+      - "8006:8000"
+    env_file:
+      - .env
+    environment:
+      SERVICE_NAME: telegram_bot
+      AUTH_SERVICE_URL: http://auth:8000
+      ROOMS_SERVICE_URL: http://rooms:8000
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      MINI_APP_URL: ${MINI_APP_URL:-https://cowatch.fun/tg}
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:?Set INTERNAL_API_SECRET in .env - no default, see internal.py}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?Set TELEGRAM_BOT_TOKEN in .env (from @BotFather)}
+    depends_on:
+      auth:
+        condition: service_started
+      rooms:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+    volumes:
+      - ./services/telegram_bot:/app
+    command: python -m app.main
 
   # Gateway — единая точка входа
   gateway:

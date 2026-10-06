@@ -36,8 +36,13 @@ def _headers() -> dict:
     return {"X-Internal-Secret": INTERNAL_API_SECRET}
 
 
-async def grant_achievement(user_id: int, achievement_code: str) -> None:
-    """achievement_code — поле code из SEED_ACHIEVEMENTS в auth (first_room, ...)."""
+async def grant_achievement(user_id: int, achievement_code: str) -> dict | None:
+    """achievement_code — поле code из SEED_ACHIEVEMENTS в auth (first_room, ...).
+
+    Возвращает ответ auth ({granted, reason?, code?, title?, icon?}) или None,
+    если запрос не удался. granted=True бывает только при первой выдаче —
+    по нему rules.py публикует achievement.granted для Telegram-бота.
+    """
     try:
         async with _make_client() as client:
             resp = await client.post(
@@ -46,8 +51,10 @@ async def grant_achievement(user_id: int, achievement_code: str) -> None:
                 headers=_headers(),
             )
             resp.raise_for_status()
+            return resp.json()
     except Exception:
         logger.exception("Не удалось выдать ачивку '%s' пользователю %s", achievement_code, user_id)
+        return None
 
 
 async def record_watch_history(user_id: int, movie_title: str, movie_url: str, duration_seconds: float) -> None:

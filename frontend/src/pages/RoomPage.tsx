@@ -86,6 +86,15 @@ export function RoomPage() {
     staleTime: Infinity, // карточка каталога не меняется, перезапрашивать нет смысла
   });
 
+  // Записывает зрителя в участники комнаты. Раньше сайт этот эндпоинт не звал
+  // вовсе, так что room.joined (наклейки «Гостеприимный», «Полный кинозал»
+  // и уведомление хосту в Telegram) не случалось ни разу. Ошибки «уже в
+  // комнате» и «комната полна» тут не важны: кто смотрит, решает вебсокет.
+  useEffect(() => {
+    if (!room || !user || room.host_id === user.id) return;
+    api.post(`/rooms/${room.code}/join`).catch(() => undefined);
+  }, [room?.code, room?.host_id, user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     const newReactions = messages.filter((msg): msg is VideoReaction => msg.type === 'video_reaction');
 

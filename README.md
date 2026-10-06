@@ -43,6 +43,7 @@
 | **Комнаты** | Приватные комнаты по коду, до 50 участников |
 | **Real-time** | Redis Pub/Sub для рассылки событий |
 | **Ачивки и история просмотра** | Кросс-сервисные события в RabbitMQ (создание/вход в комнату, сообщения, законченный просмотр) → notifications считает пороги и выдаёт ачивки через auth |
+| **Telegram-бот и Mini App** | Вход без пароля по подписи initData, комнаты из бота (`/new`, `/join`), приглашения в любой чат через inline-режим, уведомления хосту о гостях и о новых наклейках. Подробнее: [services/telegram_bot/README.md](services/telegram_bot/README.md) |
 
 ---
 
@@ -64,13 +65,20 @@ notifications_db) — сервисы не лезут друг другу в та
 реакции) идут через WebSocket и Redis Pub/Sub. Кросс-сервисная система ачивок работает отдельно, через
 события в RabbitMQ: rooms и messages публикуют доменные события (создание комнаты, вход в комнату,
 отправленное сообщение, законченный просмотр), notifications их слушает, проверяет условия ачивок и
-выдаёт их через внутренний HTTP-эндпоинт auth.
+выдаёт их через внутренний HTTP-эндпоинт auth. Шестой сервис — Telegram-бот (aiogram): он не
+трогает базы, а ходит в auth и rooms по HTTP и слушает те же события из RabbitMQ, чтобы писать людям
+в Telegram. Mini App — часть фронтенда (`/tg`), открывается внутри Telegram.
 
 ```mermaid
 flowchart TB
     subgraph Client["Frontend (React + Vite)"]
         UI[RoomPage / VideoPlayer]
+        TMA["Telegram Mini App (/tg)"]
         WS_CLIENT[WebSocket Client]
+    end
+
+    subgraph Telegram["Telegram"]
+        TGBOT["Telegram Bot (aiogram) :8006"]
     end
 
     subgraph Backend["Backend (FastAPI)"]
@@ -96,6 +104,12 @@ flowchart TB
     MSG --> PG
     MSG --> REDIS
     RECS --> PG
+    TMA -->|"POST /auth/telegram (initData)"| AUTH
+    TMA --> ROOMS
+    TGBOT -->|"/internal/telegram/*"| AUTH
+    TGBOT --> ROOMS
+    RMQ -->|"room.joined / achievement.granted"| TGBOT
+    NOTIF -->|"achievement.granted"| RMQ
     ROOMS -->|"room.created / room.joined / video.watch_completed"| RMQ
     MSG -->|"message.sent"| RMQ
     RMQ --> NOTIF
@@ -112,6 +126,8 @@ flowchart TB
 **События и ачивки:** RabbitMQ (topic exchange `cowatch.events`, aio-pika) — rooms/messages публикуют
 события, notifications их слушает и идемпотентно выдаёт ачивки через внутренний API auth
 (защищён общим секретом `INTERNAL_API_SECRET`, не JWT)
+
+**Telegram:** aiogram 3, Mini Apps SDK (`telegram-web-app.js`), long polling или вебхук
 
 **Инфра:** Docker Compose
 
@@ -163,18 +179,24 @@ VITE_API_URL=http://localhost:8003
 VITE_WS_URL=ws://localhost:8003
 ```
 
+Для Telegram (необязательно): `TELEGRAM_BOT_TOKEN` в `.env` рядом с `docker-compose.yml` (его читают auth и бот),
+`VITE_TELEGRAM_BOT_USERNAME` во `frontend/.env` — имя бота для ссылок-приглашений из Mini App.
+Бот поднимается отдельным профилем: `docker compose --profile telegram up -d telegram_bot`.
+Настройка в BotFather и переменные — в [services/telegram_bot/README.md](services/telegram_bot/README.md).
+
 ---
 
 ## Структура проекта
 
 ```
 cowatch/
-├── frontend/           # React SPA
+├── frontend/           # React SPA (+ Telegram Mini App в src/telegram, маршрут /tg)
 ├── services/
 │   ├── auth/          # Регистрация, логин, гостевой JWT, ачивки, watch-history
 │   ├── rooms/         # Комнаты, WebSocket, синхронизация видео, события в RabbitMQ
 │   ├── messages/      # Сервис сообщений, события в RabbitMQ
 │   ├── notifications/ # Слушает cowatch.events, выдаёт ачивки через internal API auth
+│   ├── telegram_bot/  # Telegram-бот: команды, inline-приглашения, уведомления из RabbitMQ
 │   └── gateway/       # WIP: единая точка входа, ещё не реализован
 ├── tests/              # pytest для auth/rooms/messages/notifications
 ├── infra/postgres/     # init-скрипт БД для docker-compose
@@ -197,6 +219,7 @@ cowatch/
 | `POST` | `/auth/register` | Регистрация |
 | `POST` | `/auth/login` | Вход |
 | `POST` | `/auth/guest?username=…` | Гостевой вход |
+| `POST` | `/auth/telegram` | Вход из Telegram Mini App: тело `{init_data}`, подпись проверяется токеном бота |
 | `POST` | `/rooms/` | Создать комнату |
 | `GET` | `/rooms/{code}` | Получить комнату |
 | `POST` | `/rooms/{code}/join` | Присоединиться к комнате |
@@ -205,6 +228,8 @@ cowatch/
 | `GET` | `/auth/profile/{user_id}` | Ачивки, история просмотра, total_movies/total_hours |
 | `POST` | `/internal/achievements/grant` | Только для notifications, секрет `X-Internal-Secret` |
 | `POST` | `/internal/history/record` | Только для notifications, секрет `X-Internal-Secret` |
+| `POST` | `/internal/telegram/token` | Только для бота: JWT пользователя по `telegram_id`, секрет `X-Internal-Secret` |
+| `GET` | `/internal/telegram/users?user_ids=…` | Только для бота: кто из пользователей привязан к Telegram |
 
 Типы WebSocket-событий: `chat_message`, `video_play`, `video_pause`, `video_seek`, `video_end`, `video_changed`, `video_reaction`, `connected`, `system`.
 `video_play`/`video_pause`/`video_state` (из Redis, т.е. состояние плеера комнаты) и `video_end` (от плеера зрителя)
@@ -251,9 +276,9 @@ cowatch/
 - Личный кабинет на фронтенде для ачивок и истории просмотра (бэкенд уже отдаёт `/auth/profile/{user_id}`)
 - Публичные комнаты
 - Поиск фильмов и сериалов прямо в интерфейсе
-- Мобильная версия сайта или отдельное приложение
+- Мобильная версия сайта или отдельное приложение (Telegram Mini App уже есть)
 - API Gateway как единая точка входа
-- Уведомления при приглашении в комнату
+- Уведомления при приглашении в комнату на сайте (в Telegram уже есть: бот пишет хосту, когда кто-то зашёл)
 - Более точная синхронизация с учётом сетевой задержки
 
 ---

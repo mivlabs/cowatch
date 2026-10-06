@@ -257,6 +257,11 @@ async def seed_achievements(db: AsyncSession) -> None:
 class GrantResult:
     granted: bool
     reason: str | None = None
+    # Заполняются, когда ачивка найдена — чтобы вызывающий (internal API ->
+    # notifications -> Telegram-бот) мог назвать наклейку, не зная SEED_ACHIEVEMENTS.
+    code: str | None = None
+    title: str | None = None
+    icon: str | None = None
 
 
 async def grant_achievement(db: AsyncSession, user_id: int, achievement_code: str) -> GrantResult:
@@ -296,11 +301,12 @@ async def grant_achievement(db: AsyncSession, user_id: int, achievement_code: st
     result = await db.execute(stmt)
     await db.commit()
 
+    details = {"code": achievement.code, "title": achievement.title, "icon": achievement.icon}
     if result.scalar_one_or_none() is None:
-        return GrantResult(granted=False, reason="already_granted")
+        return GrantResult(granted=False, reason="already_granted", **details)
 
     logger.info("Пользователь %s получил ачивку '%s'", user_id, achievement_code)
-    return GrantResult(granted=True)
+    return GrantResult(granted=True, **details)
 
 
 async def record_watch_history(

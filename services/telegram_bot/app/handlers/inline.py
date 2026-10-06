@@ -47,8 +47,8 @@ async def inline_invite(query: InlineQuery, api: CowatchApi, settings: Settings,
                 _article(
                     "hint",
                     texts.inline_hint_title(),
-                    texts.inline_hint_description(),
-                    texts.HELP,
+                    texts.inline_hint_description(bot_username),
+                    texts.help_text(bot_username),
                 )
             ],
             cache_time=30,

@@ -18,12 +18,23 @@ def _buttons(markup) -> list:
 @pytest.mark.asyncio
 async def test_start_shows_welcome_with_web_app_button(settings):
     message = make_message("/start")
-    await commands.start(message, settings)
+    await commands.start(message, settings, BOT_USERNAME)
 
     text, kwargs = message.answer.call_args.args[0], message.answer.call_args.kwargs
     assert "Маша" in text
     [button] = _buttons(kwargs["reply_markup"])
     assert button.web_app.url == "https://cowatch.fun/tg"
+    assert "@cowatch_test_bot" in text
+    assert "@бот" not in text
+
+
+@pytest.mark.asyncio
+async def test_help_names_the_bot():
+    message = make_message("/help")
+    await commands.help_command(message, BOT_USERNAME)
+    text = message.answer.call_args.args[0]
+    assert "@cowatch_test_bot КОД" in text
+    assert "/new" in text
 
 
 @pytest.mark.asyncio

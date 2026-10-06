@@ -57,18 +57,20 @@ async def start_with_payload(
     if code:
         await send_room_card(message, api, settings, bot_username, code)
     else:
-        await start(message, settings)
+        await start(message, settings, bot_username)
 
 
 @router.message(CommandStart())
-async def start(message: Message, settings: Settings) -> None:
+async def start(message: Message, settings: Settings, bot_username: str) -> None:
     first_name = message.from_user.first_name if message.from_user else None
-    await message.answer(texts.welcome(first_name), reply_markup=keyboards.open_app_keyboard(settings))
+    await message.answer(
+        texts.welcome(first_name, bot_username), reply_markup=keyboards.open_app_keyboard(settings)
+    )
 
 
 @router.message(Command("help"))
-async def help_command(message: Message) -> None:
-    await message.answer(texts.HELP)
+async def help_command(message: Message, bot_username: str) -> None:
+    await message.answer(texts.help_text(bot_username))
 
 
 @router.message(Command("app"))

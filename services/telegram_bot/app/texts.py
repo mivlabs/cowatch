@@ -14,27 +14,35 @@ def _plural(n: int, forms: tuple[str, str, str]) -> str:
     return forms[2]
 
 
-def welcome(first_name: str | None) -> str:
+def _mention(bot_username: str | None) -> str:
+    """@cowatchfun_bot в текстах; пока имя не известно — просто «@бот»."""
+    name = (bot_username or "").strip().lstrip("@")
+    return f"@{escape(name)}" if name else "@бот"
+
+
+def welcome(first_name: str | None, bot_username: str | None = None) -> str:
     name = escape((first_name or "").strip()) or "друг"
     return (
         f"Привет, {name}! Это {BOT_NAME} — совместный просмотр видео с друзьями: "
         "общий плеер, синхронная перемотка, чат и реакции.\n\n"
         "Открой приложение кнопкой ниже, создай комнату и отправь друзьям код. "
         "Или прямо здесь: /new — новая комната, /join КОД — зайти по коду.\n\n"
-        "Подсказка: напиши в любом чате @бот и код комнаты, чтобы отправить приглашение."
+        f"Подсказка: напиши в любом чате {_mention(bot_username)} и код комнаты, "
+        "чтобы отправить приглашение."
     )
 
 
-HELP = (
-    f"<b>Что умеет {BOT_NAME}</b>\n\n"
-    "/new <i>название</i> — создать комнату и получить код\n"
-    "/join <i>КОД</i> — открыть комнату по коду\n"
-    "/profile — наклейки и часы в зале\n"
-    "/app — открыть приложение\n\n"
-    "Можно просто прислать код комнаты сообщением.\n"
-    "В любом чате: @бот КОД — отправить друзьям приглашение.\n\n"
-    "Бот напишет, когда к тебе в комнату кто-то зайдёт и когда появится новая наклейка."
-)
+def help_text(bot_username: str | None = None) -> str:
+    return (
+        f"<b>Что умеет {BOT_NAME}</b>\n\n"
+        "/new <i>название</i> — создать комнату и получить код\n"
+        "/join <i>КОД</i> — открыть комнату по коду\n"
+        "/profile — наклейки и часы в зале\n"
+        "/app — открыть приложение\n\n"
+        "Можно просто прислать код комнаты сообщением.\n"
+        f"В любом чате: {_mention(bot_username)} КОД — отправить друзьям приглашение.\n\n"
+        "Бот напишет, когда к тебе в комнату кто-то зайдёт и когда появится новая наклейка."
+    )
 
 
 def default_room_title(first_name: str | None) -> str:
@@ -143,8 +151,8 @@ def inline_hint_title() -> str:
     return "Введи код комнаты"
 
 
-def inline_hint_description() -> str:
-    return "Например: @бот ABC234 — отправлю приглашение в этот чат"
+def inline_hint_description(bot_username: str | None = None) -> str:
+    return f"Например: {_mention(bot_username)} ABC234 — отправлю приглашение в этот чат"
 
 
 def inline_not_found_title(code: str) -> str:

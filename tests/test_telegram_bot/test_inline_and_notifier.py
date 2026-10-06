@@ -20,6 +20,7 @@ async def test_inline_empty_query_gives_hint_and_create_button(settings, api):
     await inline.inline_invite(query, api, settings, BOT_USERNAME)
     results = query.answer.call_args.args[0]
     assert results[0].title == "Введи код комнаты"
+    assert "@cowatch_test_bot ABC234" in results[0].description
     assert query.answer.call_args.kwargs["button"].web_app.url == "https://cowatch.fun/tg"
 
 

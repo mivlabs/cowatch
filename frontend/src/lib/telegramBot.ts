@@ -1,11 +1,13 @@
 /**
- * Which bot the Mini App belongs to. Set VITE_TELEGRAM_BOT_USERNAME on Vercel
- * (and in frontend/.env.local for development) once the bot exists; without it
- * invitations fall back to plain site links, which still open the room on the web.
+ * Which bot the Mini App belongs to: @cowatchfun_bot in production.
+ * VITE_TELEGRAM_BOT_USERNAME overrides it (a test bot in frontend/.env.local, say);
+ * with no bot at all invitations fall back to plain site links.
  */
-export const TELEGRAM_BOT_USERNAME = ((import.meta.env.VITE_TELEGRAM_BOT_USERNAME as string | undefined) ?? '')
-  .trim()
-  .replace(/^@/, '');
+const DEFAULT_BOT_USERNAME = 'cowatchfun_bot';
+
+export const TELEGRAM_BOT_USERNAME =
+  ((import.meta.env.VITE_TELEGRAM_BOT_USERNAME as string | undefined) ?? '').trim().replace(/^@/, '') ||
+  DEFAULT_BOT_USERNAME;
 
 /** t.me/<bot>?startapp=<code>: opens the bot's main Mini App straight in the room. */
 export function miniAppLink(startParam?: string): string | null {

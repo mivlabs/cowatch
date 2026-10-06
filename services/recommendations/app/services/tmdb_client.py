@@ -131,7 +131,7 @@ class TMDBClient:
         if int(raw.get("vote_count") or 0) < min_votes:
             return False
         title = raw.get("title") if media_type == "movie" else raw.get("name")
-        return bool(title)
+        return bool(title) and _is_readable_title(title)
 
     @staticmethod
     def to_content_dict(raw: dict, media_type: str, genre_map: dict[int, str]) -> dict:
@@ -153,6 +153,20 @@ class TMDBClient:
             "poster_path": raw.get("poster_path"),
             "release_year": _parse_year(release_date),
         }
+
+
+def _is_readable_title(title: str) -> bool:
+    """
+    Мы запрашиваем TMDB с language=ru-RU; если русского названия нет, TMDB
+    отдаёт оригинальное — и в каталог попадают 'सीआईडी' или
+    'ちびまる子ちゃん'. Такие карточки пропускаем: оставляем названия, где
+    буквы (если они есть) латиница или кириллица; '1917' и '1+1' без букв
+    проходят.
+    """
+    letters = [ch for ch in title if ch.isalpha()]
+    if not letters:
+        return True
+    return any(ord(ch) < 0x250 or 0x400 <= ord(ch) < 0x500 for ch in letters)
 
 
 def _parse_year(release_date: str | None) -> int | None:

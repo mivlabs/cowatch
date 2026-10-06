@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -6,11 +7,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from app.core.config import settings
-from app.database import get_db
+from app.database import async_session, get_db
 from app.models.interaction import WatchEvent
 from app.schemas.recommendation import ModelInfo, RecommendationsResponse
+from app.services.catalog_import import import_catalog
 from app.services.etl import sync_watch_events
 from app.services.model_store import store
+from app.services.tmdb_client import TMDBClient
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["recommendations"])
@@ -70,6 +73,52 @@ async def trigger_retrain(db=Depends(get_db)):
     """Синхронизировать просмотры и переобучить модель прямо сейчас, не
     дожидаясь расписания — например, сразу после импорта каталога."""
     return await store.refresh(db)
+
+
+_import_state: dict = {"running": False, "last": None}
+
+
+async def _run_catalog_import(pages: int, min_votes: int) -> None:
+    _import_state["running"] = True
+    try:
+        async with async_session() as session:
+            summary = await import_catalog(session, TMDBClient(), pages=pages, min_votes=min_votes)
+            retrain = await store.refresh(session)
+        _import_state["last"] = {
+            "finished_at": datetime.now(timezone.utc).isoformat(),
+            "catalog": summary,
+            "model": retrain,
+        }
+    except Exception as exc:  # noqa: BLE001 — результат нужно показать в /admin/import-catalog, не потерять в логах
+        logger.exception("Импорт каталога упал")
+        _import_state["last"] = {"finished_at": datetime.now(timezone.utc).isoformat(), "error": str(exc)}
+    finally:
+        _import_state["running"] = False
+
+
+@router.post("/admin/import-catalog")
+async def trigger_catalog_import(
+    pages: int = Query(default=25, ge=1, le=100, description="Страниц каждой подборки TMDB (20 карточек на странице)"),
+    min_votes: int = Query(default=20, ge=0),
+):
+    """
+    Догрузить каталог из TMDB изнутри сервиса (база доступна по внутреннему
+    адресу, публичный не нужен) и сразу переобучить модель. Работает в фоне:
+    сотня страниц TMDB — это минута-другая, дольше, чем стоит держать HTTP-
+    запрос. Прогресс и итог — GET /admin/import-catalog.
+    """
+    if not TMDBClient().enabled:
+        raise HTTPException(status_code=503, detail="TMDB_API_KEY не задан в окружении сервиса")
+    if _import_state["running"]:
+        return {"started": False, "running": True, "last": _import_state["last"]}
+
+    asyncio.create_task(_run_catalog_import(pages, min_votes))
+    return {"started": True, "running": True, "last": _import_state["last"]}
+
+
+@router.get("/admin/import-catalog")
+async def catalog_import_status():
+    return _import_state
 
 
 @router.post("/admin/sync-watch-events")

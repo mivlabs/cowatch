@@ -122,7 +122,11 @@ class ContentRecommender:
     # min_votes — карточки с меньшим числом голосов не рекомендуем вовсе
     # (неизвестные и ещё не вышедшие фильмы), если в каталоге есть голоса.
     prior_floor: float = 0.3
-    rating_prior_votes: int = 200
+    rating_prior_votes: int = 1000
+    # Доля рейтинга в приоре (остальное — популярность). Подобрано на живом
+    # каталоге: при 0.5 топ гостя состоял из одних релизов текущего года,
+    # при 0.75 рядом с ними появляются "Побег из Шоушенка" и "Крёстный отец".
+    rating_weight: float = 0.75
     min_votes: int = 50
     watch_bonus: float = 0.1
 
@@ -217,7 +221,7 @@ class ContentRecommender:
         else:
             pop_norm = rating_norm
 
-        prior = 0.5 * rating_norm + 0.5 * pop_norm
+        prior = self.rating_weight * rating_norm + (1.0 - self.rating_weight) * pop_norm
         eligible = votes >= self.min_votes
         if not eligible.any():
             eligible = np.ones(n, dtype=bool)
@@ -237,23 +241,54 @@ class ContentRecommender:
             return None
         return self._item_matrix[idxs].mean(axis=0).reshape(1, -1)
 
+    # Холодный старт: сколько фильмов приходится на один сериал. Долгие
+    # сериалы ("Офис", "Симпсоны") по популярности TMDB обгоняют почти любой
+    # фильм, и без квоты топ гостя состоял бы из одних сериалов — а CoWatch
+    # всё-таки про "собраться и посмотреть фильм".
+    movies_per_tv: int = 2
+
     def most_popular(self, k: int | None = None, exclude: set[int] | None = None) -> list[dict]:
         k = k or self.k_default
         exclude = exclude or set()
         assert self._popular_score is not None and self._content_df is not None
 
         order = np.argsort(-self._popular_score, kind="stable")
-        items = []
+        has_media_type = "media_type" in self._content_df.columns
+        movies: list[int] = []
+        shows: list[int] = []
         for idx in order:
             if not self._eligible[idx]:
                 continue
             cid = int(self._content_df.iloc[idx]["content_id"])
             if cid in exclude:
                 continue
-            items.append(self._as_item(cid, score=float(self._popular_score[idx]), reason="popular_fallback"))
-            if len(items) >= k:
+            is_show = has_media_type and self._content_df.iloc[idx]["media_type"] == "tv"
+            (shows if is_show else movies).append(idx)
+
+        # Чередуем: movies_per_tv фильмов, один сериал, и так далее; когда
+        # одна из очередей кончилась, добираем из другой.
+        picked: list[int] = []
+        while len(picked) < k and (movies or shows):
+            for _ in range(self.movies_per_tv):
+                if movies and len(picked) < k:
+                    picked.append(movies.pop(0))
+            if shows and len(picked) < k:
+                picked.append(shows.pop(0))
+            if not movies and shows:
+                picked.extend(shows[: k - len(picked)])
                 break
-        return items
+            if not shows and movies:
+                picked.extend(movies[: k - len(picked)])
+                break
+
+        return [
+            self._as_item(
+                int(self._content_df.iloc[idx]["content_id"]),
+                score=float(self._popular_score[idx]),
+                reason="popular_fallback",
+            )
+            for idx in picked
+        ]
 
     def recommend_for_user(self, user_content_ids: list[int], k: int | None = None) -> list[dict]:
         """user_content_ids — контент, который пользователь уже смотрел (для персонализации и исключения из выдачи)."""

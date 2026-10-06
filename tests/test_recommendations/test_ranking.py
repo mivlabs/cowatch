@@ -89,6 +89,33 @@ def test_tmdb_filter_drops_talk_shows_and_unvoted():
     assert not TMDBClient.is_wanted(fresh, "movie", min_votes=20)
 
 
+def test_tmdb_filter_drops_untranslated_titles():
+    assert not TMDBClient.is_wanted({"id": 1, "name": "सीआईडी", "genre_ids": [18], "vote_count": 500}, "tv")
+    assert TMDBClient.is_wanted({"id": 2, "title": "1+1", "genre_ids": [18], "vote_count": 500}, "movie")
+    assert TMDBClient.is_wanted({"id": 3, "title": "Интерстеллар", "genre_ids": [18], "vote_count": 500}, "movie")
+
+
+def test_cold_start_mixes_movies_and_shows():
+    df = pd.DataFrame(
+        [
+            {"content_id": i, "title": f"Show {i}", "media_type": "tv", "genres": ["драма"], "overview": "",
+             "popularity": 1000.0, "vote_average": 8.5, "vote_count": 10000}
+            for i in range(1, 6)
+        ]
+        + [
+            {"content_id": i, "title": f"Movie {i}", "media_type": "movie", "genres": ["драма"], "overview": "",
+             "popularity": 10.0, "vote_average": 7.0, "vote_count": 10000}
+            for i in range(6, 11)
+        ]
+    )
+    model = ContentRecommender(min_votes=50)
+    model.fit(df, pd.DataFrame(columns=["user_id", "content_id", "joined_at"]))
+
+    types = [r["media_type"] for r in model.most_popular(k=6)]
+
+    assert types == ["movie", "movie", "tv", "movie", "movie", "tv"]
+
+
 def test_to_content_dict_keeps_rating_fields():
     raw = {"id": 42, "title": "X", "genre_ids": [28], "popularity": 12.5, "vote_average": 7.1,
            "vote_count": 900, "original_language": "en", "release_date": "2020-05-01"}

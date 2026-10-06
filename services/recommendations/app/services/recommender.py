@@ -246,17 +246,39 @@ class ContentRecommender:
     # фильм, и без квоты топ гостя состоял бы из одних сериалов — а CoWatch
     # всё-таки про "собраться и посмотреть фильм".
     movies_per_tv: int = 2
+    # Персональная выдача: кандидаты слабее relative_floor * лучший счёт
+    # не берутся даже ради квоты (иначе к "Интерстеллару" подмешивался
+    # рестлинг — единственный сериал с ненулевой похожестью).
+    relative_floor: float = 0.6
 
     def most_popular(self, k: int | None = None, exclude: set[int] | None = None) -> list[dict]:
         k = k or self.k_default
         exclude = exclude or set()
         assert self._popular_score is not None and self._content_df is not None
 
-        order = np.argsort(-self._popular_score, kind="stable")
+        picked = self._pick_mixed(self._popular_score, k=k, exclude=exclude)
+        return [
+            self._as_item(
+                int(self._content_df.iloc[idx]["content_id"]),
+                score=float(self._popular_score[idx]),
+                reason="popular_fallback",
+            )
+            for idx in picked
+        ]
+
+    def _pick_mixed(self, scores: np.ndarray, k: int, exclude: set[int], min_score: float = -np.inf) -> list[int]:
+        """
+        Индексы top-k по scores с квотой фильмы/сериалы (movies_per_tv
+        фильмов на один сериал), без исключённых и неподходящих карточек.
+        Когда одна из очередей кончилась, добираем из другой.
+        """
+        order = np.argsort(-scores, kind="stable")
         has_media_type = "media_type" in self._content_df.columns
         movies: list[int] = []
         shows: list[int] = []
         for idx in order:
+            if scores[idx] <= min_score:
+                break
             if not self._eligible[idx]:
                 continue
             cid = int(self._content_df.iloc[idx]["content_id"])
@@ -264,9 +286,9 @@ class ContentRecommender:
                 continue
             is_show = has_media_type and self._content_df.iloc[idx]["media_type"] == "tv"
             (shows if is_show else movies).append(idx)
+            if len(movies) >= k and len(shows) >= k:
+                break
 
-        # Чередуем: movies_per_tv фильмов, один сериал, и так далее; когда
-        # одна из очередей кончилась, добираем из другой.
         picked: list[int] = []
         while len(picked) < k and (movies or shows):
             for _ in range(self.movies_per_tv):
@@ -280,15 +302,7 @@ class ContentRecommender:
             if not shows and movies:
                 picked.extend(movies[: k - len(picked)])
                 break
-
-        return [
-            self._as_item(
-                int(self._content_df.iloc[idx]["content_id"]),
-                score=float(self._popular_score[idx]),
-                reason="popular_fallback",
-            )
-            for idx in picked
-        ]
+        return picked
 
     def recommend_for_user(self, user_content_ids: list[int], k: int | None = None) -> list[dict]:
         """user_content_ids — контент, который пользователь уже смотрел (для персонализации и исключения из выдачи)."""
@@ -301,21 +315,19 @@ class ContentRecommender:
 
         sims = cosine_similarity(profile, self._item_matrix)[0]
         scores = sims * (self.prior_floor + (1.0 - self.prior_floor) * self._prior)
-        order = np.argsort(-scores, kind="stable")
 
-        items = []
-        for idx in order:
-            if not self._eligible[idx]:
-                continue
-            cid = int(self._content_df.iloc[idx]["content_id"])
-            if cid in watched:
-                continue
-            score = float(scores[idx])
-            if score <= 0:
-                break
-            items.append(self._as_item(cid, score=score, reason="personalized"))
-            if len(items) >= k:
-                break
+        # Та же квота фильмы/сериалы, что и в холодном старте: у того, кто
+        # смотрел одну драму, похожих по жанрам сериалов больше, чем фильмов,
+        # и без квоты персональная выдача превращалась в список сериалов.
+        # Квота не должна протаскивать слабых кандидатов: сериал попадает в
+        # выдачу, только если он не сильно хуже лучшего совпадения, иначе
+        # остаток добирается популярным.
+        min_score = max(0.0, float(scores.max()) * self.relative_floor)
+        picked = self._pick_mixed(scores, k=k, exclude=watched, min_score=min_score)
+        items = [
+            self._as_item(int(self._content_df.iloc[idx]["content_id"]), score=float(scores[idx]), reason="personalized")
+            for idx in picked
+        ]
 
         if len(items) < k:
             items += self.most_popular(k=k - len(items), exclude=watched | {i["content_id"] for i in items})

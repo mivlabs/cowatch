@@ -112,8 +112,11 @@ def test_cold_start_mixes_movies_and_shows():
     model.fit(df, pd.DataFrame(columns=["user_id", "content_id", "joined_at"]))
 
     types = [r["media_type"] for r in model.most_popular(k=6)]
-
     assert types == ["movie", "movie", "tv", "movie", "movie", "tv"]
+
+    # Та же квота в персональной выдаче: смотрел один сериал — получает и фильмы.
+    personal = [r["media_type"] for r in model.recommend_for_user([1], k=6)]
+    assert personal == ["movie", "movie", "tv", "movie", "movie", "tv"]
 
 
 def test_to_content_dict_keeps_rating_fields():

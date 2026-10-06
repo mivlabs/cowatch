@@ -21,6 +21,7 @@ const NAV_LINK = 'font-mono text-xs font-medium uppercase tracking-[0.12em] text
 interface RecommendedItem {
   content_id: number;
   title: string;
+  media_type: 'movie' | 'tv' | null;
   genres: string[];
   poster_path: string | null;
   release_year: number | null;
@@ -54,7 +55,7 @@ export function Landing() {
         preselected: {
           id: item.content_id,
           title: item.title,
-          media_type: 'movie',
+          media_type: item.media_type ?? 'movie',
           genres: item.genres,
           poster_path: item.poster_path,
           release_year: item.release_year,

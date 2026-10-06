@@ -15,10 +15,9 @@
   artifact: сериализованная модель (joblib)
 
 После обучения модель дополнительно сохраняется в services/recommendations/models/
-(latest.joblib + meta.json) — это и есть файл, который читает API при отдаче
-рекомендаций (см. app/routers/recommendations.py). Разделение "MLflow трекает
-эксперименты" / "простой файл раздаёт продакшену" — осознанное упрощение MVP,
-полноценный MLflow Model Registry + автоматический promotion — roadmap.
+(latest.joblib + meta.json) — для офлайн-экспериментов и сравнения в MLflow.
+Прод этот файл больше НЕ читает: сервис обучает модель сам из базы при
+старте и по расписанию (см. app/services/model_store.py).
 """
 import argparse
 import asyncio
@@ -30,10 +29,8 @@ import joblib
 import mlflow
 import pandas as pd
 from app.core.config import settings
-from app.models.content import ContentItem
-from app.models.interaction import WatchEvent
+from app.services.model_store import load_training_frames
 from app.services.recommender import ContentRecommender
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -86,24 +83,15 @@ def load_movielens(data_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 async def load_from_db() -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Те же DataFrame, что сервис строит сам при старте (model_store.load_training_frames)."""
     engine = create_async_engine(settings.database_url)
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async with async_session() as session:
-        content_rows = (await session.execute(select(ContentItem))).scalars().all()
-        interaction_rows = (
-            await session.execute(select(WatchEvent).where(WatchEvent.content_id.isnot(None)))
-        ).scalars().all()
-
-    await engine.dispose()
-
-    content_df = pd.DataFrame(
-        [{"content_id": c.id, "title": c.title, "genres": c.genres or [], "overview": c.overview or ""} for c in content_rows]
-    )
-    interactions_df = pd.DataFrame(
-        [{"user_id": w.user_id, "content_id": w.content_id, "joined_at": w.joined_at} for w in interaction_rows]
-    )
-    return content_df, interactions_df
+    try:
+        async with async_session() as session:
+            return await load_training_frames(session)
+    finally:
+        await engine.dispose()
 
 
 def train_and_evaluate(content_df: pd.DataFrame, interactions_df: pd.DataFrame, k: int = 10) -> dict:

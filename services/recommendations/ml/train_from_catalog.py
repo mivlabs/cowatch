@@ -1,15 +1,13 @@
 """
-Обучение content-based рекомендателя на РЕАЛЬНОМ каталоге CoWatch
-(content_items/watch_events прод-базы recommendations_db на Railway), а не
+Офлайн-обучение и оценка content-based рекомендателя на РЕАЛЬНОМ каталоге
+CoWatch (content_items/watch_events базы recommendations_db на Railway), а не
 на MovieLens (см. ml/train.py — тот тренируется на 9742 фильмах MovieLens с
 movieId в качестве content_id, это удобный публичный бенчмарк, но НЕ то,
 что реально отдаёт GET /recommendations/{user_id} на проде).
 
-Отдельный скрипт, а не флаг у ml/train.py, потому что коннект-стринг здесь
-обязателен и явный (--database-url), без дефолта на settings.database_url:
-тренировать нужно против ПУБЛИЧНОГО хоста Railway, не той локальной/internal
-БД, что настроена в .env для повседневной разработки — дефолт на settings
-слишком легко случайно перепутать с прод-базой.
+Прод этим скриптом больше не кормится: сервис сам обучает ту же модель из
+базы при старте и по расписанию (app/services/model_store.py). Скрипт
+нужен, чтобы посмотреть метрики и топ выдачи локально, не трогая прод.
 
 Запуск (из services/recommendations, venv активирован):
     python -m ml.train_from_catalog --database-url "postgresql://user:pass@host:port/recommendations_db"
@@ -22,79 +20,38 @@ import asyncio
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
 import joblib
 import pandas as pd
 from app.core.config import settings
-from app.models.content import ContentItem
-from app.models.interaction import WatchEvent
+from app.services.model_store import load_training_frames
 from app.services.recommender import ContentRecommender
-from sqlalchemy import select
+from ml.db_url import to_asyncpg_url
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 
-def _to_asyncpg_url(raw_url: str) -> str:
-    """
-    Railway отдаёт публичный connection string как
-    postgresql://user:pass@host:port/db (psycopg-стиль). SQLAlchemy async
-    нужен драйвер asyncpg: postgresql+asyncpg://... . sslmode=... в query
-    string — синтаксис psycopg2, asyncpg его не понимает и падает на
-    подключении, поэтому вырезаем (Railway публичный прокси не требует
-    отдельного управления TLS через этот параметр).
-    """
-    parts = urlsplit(raw_url)
-    scheme = parts.scheme
-    if scheme == "postgres":
-        scheme = "postgresql"
-    if "+asyncpg" not in scheme:
-        scheme = scheme.replace("postgresql", "postgresql+asyncpg", 1)
-
-    query_pairs = [(k, v) for k, v in parse_qsl(parts.query) if k.lower() != "sslmode"]
-    query = urlencode(query_pairs)
-
-    return urlunsplit((scheme, parts.netloc, parts.path, query, parts.fragment))
-
-
 async def load_from_catalog_db(database_url: str) -> tuple[pd.DataFrame, pd.DataFrame]:
-    engine = create_async_engine(_to_asyncpg_url(database_url))
+    engine = create_async_engine(to_asyncpg_url(database_url))
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
     try:
         async with async_session() as session:
-            content_rows = (await session.execute(select(ContentItem))).scalars().all()
-            interaction_rows = (
-                await session.execute(select(WatchEvent).where(WatchEvent.content_id.isnot(None)))
-            ).scalars().all()
+            return await load_training_frames(session)
     finally:
         await engine.dispose()
-
-    content_df = pd.DataFrame(
-        [
-            {
-                "content_id": c.id,
-                "title": c.title,
-                "genres": c.genres or [],
-                "overview": c.overview or "",
-                "poster_path": c.poster_path,
-                "release_year": c.release_year,
-            }
-            for c in content_rows
-        ]
-    )
-    interactions_df = pd.DataFrame(
-        [{"user_id": w.user_id, "content_id": w.content_id, "joined_at": w.joined_at} for w in interaction_rows]
-    )
-    return content_df, interactions_df
 
 
 def train_and_save(content_df: pd.DataFrame, interactions_df: pd.DataFrame, k: int = 10) -> dict:
     if content_df.empty:
         raise SystemExit("content_items пуст — нечего обучать. Проверь --database-url и что каталог загружен (ml/import_catalog.py).")
 
-    model = ContentRecommender(k_default=k)
+    model = ContentRecommender(k_default=k, min_votes=settings.min_votes)
     model.fit(content_df, interactions_df)
+
+    print("Топ холодного старта (то, что видят гости):")
+    for item in model.most_popular(k=k):
+        print(f"  {item['score']:.3f}  {item['title']} ({item['media_type']}, {item['release_year']})")
 
     if interactions_df.empty:
         print("watch_events пуст — метрики недоступны, модель обучена только на content_items (genres/overview).")

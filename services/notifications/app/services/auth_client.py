@@ -36,17 +36,18 @@ def _headers() -> dict:
     return {"X-Internal-Secret": INTERNAL_API_SECRET}
 
 
-async def grant_achievement(user_id: int, achievement_title: str) -> None:
+async def grant_achievement(user_id: int, achievement_code: str) -> None:
+    """achievement_code — поле code из SEED_ACHIEVEMENTS в auth (first_room, ...)."""
     try:
         async with _make_client() as client:
             resp = await client.post(
                 "/internal/achievements/grant",
-                json={"user_id": user_id, "achievement_title": achievement_title},
+                json={"user_id": user_id, "achievement_code": achievement_code},
                 headers=_headers(),
             )
             resp.raise_for_status()
     except Exception:
-        logger.exception("Не удалось выдать ачивку '%s' пользователю %s", achievement_title, user_id)
+        logger.exception("Не удалось выдать ачивку '%s' пользователю %s", achievement_code, user_id)
 
 
 async def record_watch_history(user_id: int, movie_title: str, movie_url: str, duration_seconds: float) -> None:

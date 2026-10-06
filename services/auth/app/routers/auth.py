@@ -2,7 +2,7 @@ import random
 import logging
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import func, select
 from pydantic import BaseModel
 from datetime import datetime
 from typing import List, Optional
@@ -19,7 +19,7 @@ from app.services.auth import (
     create_access_token,
     create_refresh_token,
 )
-from app.services.achievement_service import grant_achievement
+from app.services.achievement_service import CATEGORY_ORDER, grant_achievement
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +30,14 @@ router = APIRouter(tags=["Authentication"])
 # ==========================================
 class AchievementResponse(BaseModel):
     id: int
+    code: str
     title: str
     description: str
     icon: str
-    unlocked_at: datetime
+    category: str
+    # None — наклейка ещё не получена. Профиль отдаёт всю коллекцию, чтобы
+    # фронт показывал и закрытые наклейки с подсказкой, как их добыть.
+    unlocked_at: Optional[datetime]
     model_config = {"from_attributes": True}
 
 class HistoryResponse(BaseModel):
@@ -73,7 +77,7 @@ async def register(user_in: UserCreate, db: AsyncSession = Depends(get_db)):
         )
 
     new_user = await create_user(db, user_in)
-    await grant_achievement(db, new_user.id, "Первый шаг")
+    await grant_achievement(db, new_user.id, "first_step")
     return new_user
 
 @router.post("/login", response_model=Token)
@@ -130,22 +134,32 @@ async def get_profile_stats(user_id: int, db: AsyncSession = Depends(get_db)):
     # только для строк, заведённых до этой миграции (см. backfill-скрипт)
     display_name = user.username or user.email or f"User_{user.id}"
 
-    # 4. Получаем ачивки (вместе с unlocked_at из UserAchievement — Achievement сам
-    # по себе этой колонки не хранит, а AchievementResponse её требует)
-    achievements_query = await db.execute(
-        select(Achievement, UserAchievement.unlocked_at)
-        .join(UserAchievement, Achievement.id == UserAchievement.achievement_id)
+    # 4. Вся коллекция ачивок: outer join на UserAchievement этого пользователя,
+    # unlocked_at = None для ещё не полученных. Порядок — группа, потом
+    # sort_order внутри группы (см. SEED_ACHIEVEMENTS).
+    user_unlocks = (
+        select(UserAchievement.achievement_id, UserAchievement.unlocked_at)
         .where(UserAchievement.user_id == user_id)
+        .subquery()
     )
+    achievements_query = await db.execute(
+        select(Achievement, user_unlocks.c.unlocked_at)
+        .outerjoin(user_unlocks, Achievement.id == user_unlocks.c.achievement_id)
+        .order_by(Achievement.category, Achievement.sort_order, Achievement.id)
+    )
+    achievement_rows = achievements_query.all()
+    achievement_rows.sort(key=lambda row: (CATEGORY_ORDER.get(row[0].category, 99), row[0].sort_order, row[0].id))
     achievements = [
         AchievementResponse(
             id=achievement.id,
+            code=achievement.code,
             title=achievement.title,
             description=achievement.description,
             icon=achievement.icon,
+            category=achievement.category,
             unlocked_at=unlocked_at,
         )
-        for achievement, unlocked_at in achievements_query.all()
+        for achievement, unlocked_at in achievement_rows
     ]
 
     # 5. Получаем историю (последние 10)
@@ -157,11 +171,18 @@ async def get_profile_stats(user_id: int, db: AsyncSession = Depends(get_db)):
     )
     history = history_query.scalars().all()
 
-    # 6. Считаем статистику из реальных данных (duration_minutes приходит из
-    # video.watch_completed через /internal/history/record) — раньше тут был
-    # захардкоженный total_movies * 2.0, ничего общего с фактическим просмотром.
-    total_movies = len(history)
-    total_hours = round(sum(h.duration_minutes for h in history) / 60, 2)
+    # 6. Статистика по ВСЕЙ истории, а не по последним 10 записям из шага 5:
+    # иначе часы в шапке профиля переставали расти после десятого просмотра,
+    # а «Марафонец» (10 часов, считается в notifications) приходил при цифре
+    # заметно меньше 10.
+    totals = (
+        await db.execute(
+            select(func.count(WatchHistory.id), func.coalesce(func.sum(WatchHistory.duration_minutes), 0))
+            .where(WatchHistory.user_id == user_id)
+        )
+    ).one()
+    total_movies = int(totals[0])
+    total_hours = round(int(totals[1]) / 60, 2)
 
     return ProfileStatsResponse(
         username=display_name,

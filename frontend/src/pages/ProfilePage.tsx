@@ -9,19 +9,11 @@ import { NightSky } from '@/components/brand/NightSky';
 import { CatSticker } from '@/components/brand/CatSticker';
 import { PlateHeader } from '@/components/landing/PlateHeader';
 import { ProfileHeader } from '@/components/profile/ProfileHeader';
-import { AchievementsGrid } from '@/components/profile/AchievementsGrid';
+import { AchievementsGrid, type Achievement } from '@/components/profile/AchievementsGrid';
 import { WatchHistory } from '@/components/profile/WatchHistory';
 import { AccountSettings } from '@/components/profile/AccountSettings';
 
-// Типы данных, которые приходят с бэкенда
-interface Achievement {
-  id: number;
-  title: string;
-  description: string;
-  icon: string;
-  unlocked_at: string;
-}
-
+// Типы данных, которые приходят с бэкенда (Achievement живёт рядом с гридом)
 interface HistoryItem {
   id: number;
   movie_title: string;
@@ -119,10 +111,10 @@ export function ProfilePage() {
         <section className="grid gap-5 md:grid-cols-[220px_1fr] md:gap-8">
           <PlateHeader
             label="Ачивки"
-            title={achievementsTitle(profile.achievements.length)}
+            title={achievementsTitle(profile.achievements)}
           />
           <div className="min-w-0">
-            <AchievementsGrid achievements={profile.achievements} isGuest={user.isGuest} />
+            <AchievementsGrid achievements={profile.achievements} isGuest={user.isGuest} userId={user.id} />
           </div>
         </section>
 
@@ -143,7 +135,9 @@ export function ProfilePage() {
   );
 }
 
-function achievementsTitle(count: number) {
-  if (count === 0) return 'Пока впереди';
-  return `${count} ${plural(count, ['наклейка', 'наклейки', 'наклеек'])}`;
+function achievementsTitle(achievements: Achievement[]) {
+  const earned = achievements.filter((a) => a.unlocked_at).length;
+  const total = achievements.length;
+  if (earned === 0) return 'Пока впереди';
+  return `${earned} из ${total} ${plural(total, ['наклейки', 'наклеек', 'наклеек'])}`;
 }

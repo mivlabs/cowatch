@@ -28,7 +28,11 @@ from app.schemas.internal import (
     InternalActionResponse,
     RecordHistoryRequest,
 )
-from app.services.achievement_service import grant_achievement, record_watch_history
+from app.services.achievement_service import (
+    LEGACY_TITLE_TO_CODE,
+    grant_achievement,
+    record_watch_history,
+)
 
 INTERNAL_API_SECRET = os.environ["INTERNAL_API_SECRET"]
 if len(INTERNAL_API_SECRET) < 16:
@@ -63,7 +67,10 @@ async def grant_achievement_endpoint(
     req: GrantAchievementRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    result = await grant_achievement(db, req.user_id, req.achievement_title)
+    code = req.achievement_code or LEGACY_TITLE_TO_CODE.get(req.achievement_title or "")
+    if code is None:
+        return InternalActionResponse(granted=False, reason="unknown_achievement")
+    result = await grant_achievement(db, req.user_id, code)
     return InternalActionResponse(granted=result.granted, reason=result.reason)
 
 

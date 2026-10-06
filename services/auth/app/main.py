@@ -6,7 +6,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.database import engine, Base, async_session
 from app.routers import auth, internal
-from app.services.achievement_service import seed_achievements
+from app.services.achievement_service import ensure_achievements_schema, seed_achievements
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("uvicorn.error")
@@ -30,6 +30,9 @@ async def lifespan(app: FastAPI):
         await conn.run_sync(Base.metadata.create_all)
     logger.info("✅ [AUTH] База данных готова!")
 
+    # create_all не добавляет колонки в существующие таблицы — для старой
+    # таблицы achievements (без code/category/sort_order) нужна эта миграция.
+    await ensure_achievements_schema(engine)
     async with async_session() as db:
         await seed_achievements(db)
     logger.info("✅ [AUTH] Seed-ачивки на месте!")

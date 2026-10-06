@@ -3,7 +3,11 @@ from pydantic import BaseModel
 
 class GrantAchievementRequest(BaseModel):
     user_id: int
-    achievement_title: str
+    # Ключ ачивки — code (см. SEED_ACHIEVEMENTS). achievement_title оставлен
+    # для старого notifications на время раскатки: оба сервиса деплоятся одним
+    # пушем, но перезапускаются не одновременно.
+    achievement_code: str | None = None
+    achievement_title: str | None = None
 
 
 class RecordHistoryRequest(BaseModel):

@@ -7,10 +7,19 @@ class Achievement(Base):
     __tablename__ = "achievements"
 
     id = Column(Integer, primary_key=True, index=True)
-    title = Column(String, nullable=False)          
-    description = Column(String, nullable=False)  
-    icon = Column(String, nullable=False)          
-    
+    # Стабильный идентификатор ачивки для выдачи (grant_achievement, правила в
+    # notifications, регистрация). Раньше ключом служил title, из-за чего
+    # переименовать наклейку без миграции было нельзя. На старых базах
+    # колонка добавляется в ensure_achievements_schema() и заполняется по
+    # LEGACY_TITLE_TO_CODE в seed_achievements().
+    code = Column(String(64), unique=True, index=True, nullable=False)
+    title = Column(String, nullable=False)
+    description = Column(String, nullable=False)
+    icon = Column(String, nullable=False)
+    # Группа в профиле (hall / chat / watch) и порядок внутри неё.
+    category = Column(String(32), nullable=False, server_default="hall")
+    sort_order = Column(Integer, nullable=False, server_default="0")
+
     # Связь с пользователем (кто разблокировал)
     user_achievements = relationship("UserAchievement", back_populates="achievement")
 

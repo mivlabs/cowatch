@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
 EXCHANGE_NAME = "cowatch.events"
 QUEUE_NAME = "notifications.achievements"
-ROUTING_KEYS = ["room.created", "room.joined", "message.sent", "video.watch_completed"]
+ROUTING_KEYS = ["room.created", "room.joined", "message.sent", "reaction.sent", "video.watch_completed"]
 
 _connection: aio_pika.RobustConnection | None = None
 _consume_task: asyncio.Task | None = None

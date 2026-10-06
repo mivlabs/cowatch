@@ -50,6 +50,13 @@ async def _persist_video_state(code: str, payload: dict) -> None:
     await redis_client.set(_video_state_key(code), json.dumps(state))
 
 
+def _as_int_or_none(value) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 async def _fetch_room_safe(code: str) -> Room | None:
     """Как get_room_by_code, но без 404 — для использования вне HTTP-запроса (в вебсокете)."""
     async with async_session() as db:
@@ -268,28 +275,15 @@ async def room_websocket(websocket: WebSocket, code: str):
             "username": user_email
         }))
 
-        video_state = await _get_video_state(code)
-        if video_state and not is_host:
-            await websocket.send_text(json.dumps(video_state))
-            print(f"📼 [WS] Отправлен снимок видео гостю {user_id}: {video_state}")
-
-        async def listen_redis():
-            try:
-                async for message in pubsub.listen():
-                    if message["type"] == "message":
-                        try:
-                            await websocket.send_text(message["data"])
-                        except Exception:
-                            break
-            except Exception:
-                pass
-
-        listener = asyncio.create_task(listen_redis())
-
         # Трекинг времени просмотра этим конкретным пользователем в этой комнате.
         # Раньше состояние воспроизведения было только общим для комнаты (в Redis),
         # без привязки к тому, кто и сколько именно смотрел — video.watch_completed
         # ниже закрывает именно этот пробел.
+        #
+        # Таймер заводится по событиям play/pause, которые приходят ИЗ Redis
+        # (т.е. по состоянию плеера комнаты), а не только по тем, что прислал
+        # сам этот клиент: гости не шлют video_play (их плеер синхронизируется
+        # с хостом), и раньше время просмотра копилось только у хоста.
         watch_started_at: datetime | None = None
         watched_seconds = 0.0
 
@@ -304,7 +298,31 @@ async def room_websocket(websocket: WebSocket, code: str):
                 watched_seconds += (datetime.utcnow() - watch_started_at).total_seconds()
                 watch_started_at = None
 
-        async def _flush_watch_completed() -> None:
+        def _track_playback(payload: dict) -> None:
+            playback_type = payload.get("type")
+            if playback_type == "video_play":
+                _start_watch_timer()
+            elif playback_type == "video_pause":
+                _stop_watch_timer()
+            elif playback_type == "video_state":
+                if payload.get("is_playing"):
+                    _start_watch_timer()
+                else:
+                    _stop_watch_timer()
+
+        async def _flush_watch_completed(
+            completed: bool = False,
+            local_hour: int | None = None,
+            local_date: str | None = None,
+        ) -> None:
+            """Публикует video.watch_completed с накопленным временем.
+
+            completed=True — плеер этого зрителя дошёл до конца (video_end с
+            фронта); False — зритель вышел из комнаты раньше. notifications
+            по этому флагу решает, засчитывать ли «досмотрел до конца», а часы
+            и история пишутся в обоих случаях. local_hour/local_date — время
+            зрителя из его браузера, для ачивок «Полуночник» и «Двойной сеанс».
+            """
             nonlocal watched_seconds
             _stop_watch_timer()
             if watched_seconds <= 0 or user_id == 0:
@@ -316,9 +334,36 @@ async def room_websocket(websocket: WebSocket, code: str):
                 "room_code": code,
                 "content_id": getattr(room, "content_id", None) if room else None,
                 "content_title": getattr(room, "current_movie_title", None) if room else None,
+                "content_url": getattr(room, "current_movie_url", None) if room else None,
                 "duration_seconds": watched_seconds,
+                "completed": completed,
+                "local_hour": local_hour,
+                "local_date": local_date,
             })
             watched_seconds = 0.0
+
+        video_state = await _get_video_state(code)
+        if video_state and not is_host:
+            await websocket.send_text(json.dumps(video_state))
+            _track_playback(video_state)
+            print(f"📼 [WS] Отправлен снимок видео гостю {user_id}: {video_state}")
+
+        async def listen_redis():
+            try:
+                async for message in pubsub.listen():
+                    if message["type"] == "message":
+                        try:
+                            _track_playback(json.loads(message["data"]))
+                        except (json.JSONDecodeError, TypeError, AttributeError):
+                            pass
+                        try:
+                            await websocket.send_text(message["data"])
+                        except Exception:
+                            break
+            except Exception:
+                pass
+
+        listener = asyncio.create_task(listen_redis())
 
         while True:
             try:
@@ -332,7 +377,22 @@ async def room_websocket(websocket: WebSocket, code: str):
                     elif event_type == "video_pause":
                         _stop_watch_timer()
                     elif event_type == "video_end":
-                        await _flush_watch_completed()
+                        await _flush_watch_completed(
+                            completed=True,
+                            local_hour=_as_int_or_none(payload.get("local_hour")),
+                            local_date=payload.get("local_date") or None,
+                        )
+                    elif event_type == "chat_message" and user_id and str(payload.get("content") or "").strip():
+                        # Чат комнаты идёт через этот вебсокет, а не через сервис
+                        # messages — поэтому message.sent для ачивок публикуем здесь.
+                        await publish_event("message.sent", user_id, {
+                            "room_code": code,
+                        })
+                    elif event_type == "video_reaction" and user_id:
+                        await publish_event("reaction.sent", user_id, {
+                            "room_code": code,
+                            "emoji": payload.get("emoji"),
+                        })
                 except json.JSONDecodeError:
                     pass
                 await redis_client.publish(channel_name, data)

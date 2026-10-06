@@ -15,6 +15,21 @@ export interface VideoEvent {
   timestamp: string;
 }
 
+/**
+ * Sent by each viewer's own player when the video reaches the end. The rooms
+ * service turns it into video.watch_completed with completed=true, which is
+ * what the "watched to the credits" stickers are counted from. local_hour and
+ * local_date are the viewer's wall clock, for the night-owl and double-feature
+ * stickers.
+ */
+export interface VideoEndedEvent {
+  type: 'video_end';
+  user_id: number;
+  local_hour: number;
+  local_date: string;
+  timestamp: string;
+}
+
 export interface VideoChangedEvent {
   type: 'video_changed';
   url: string;
@@ -54,6 +69,7 @@ export interface ConnectionMessage {
 export type WSMessage =
   | ChatMessage
   | VideoEvent
+  | VideoEndedEvent
   | VideoChangedEvent
   | VideoStateSnapshot
   | VideoReaction
@@ -193,6 +209,27 @@ export function useRoomWebSocket({ code, userId, username }: UseRoomWebSocketOpt
     [userId],
   );
 
+  const sendVideoEnded = useCallback(() => {
+    if (wsRef.current?.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    const now = new Date();
+    const localDate = [
+      now.getFullYear(),
+      String(now.getMonth() + 1).padStart(2, '0'),
+      String(now.getDate()).padStart(2, '0'),
+    ].join('-');
+    const event: VideoEndedEvent = {
+      type: 'video_end',
+      user_id: userId,
+      local_hour: now.getHours(),
+      local_date: localDate,
+      timestamp: now.toISOString(),
+    };
+    wsRef.current.send(JSON.stringify(event));
+  }, [userId]);
+
   const sendReaction = useCallback(
     (emoji: string) => {
       if (wsRef.current?.readyState !== WebSocket.OPEN) {
@@ -217,6 +254,7 @@ export function useRoomWebSocket({ code, userId, username }: UseRoomWebSocketOpt
     isConnected,
     sendChatMessage,
     sendVideoEvent,
+    sendVideoEnded,
     sendReaction,
     isHost,
   };

@@ -14,6 +14,8 @@ interface VideoPlayerProps {
   onPlay: (position: number) => void;
   onPause: (position: number) => void;
   onSeek: (position: number) => void;
+  /** This viewer's player reached the end of the video (host and guests alike). */
+  onEnded?: () => void;
 }
 
 function getVideoType(url: string): 'youtube' | 'vimeo' | 'rutube' | 'file' {
@@ -60,6 +62,7 @@ const YouTubePlayer = memo(
     onPlay,
     onPause,
     onSeek,
+    onEnded,
     isHost,
     initialPosition = 0,
     initialIsPlaying = false,
@@ -69,11 +72,16 @@ const YouTubePlayer = memo(
     onPlay: (position: number) => void;
     onPause: (position: number) => void;
     onSeek: (position: number) => void;
+    onEnded?: () => void;
     isHost: boolean;
     initialPosition?: number;
     initialIsPlaying?: boolean;
   }) => {
     const containerRef = useRef<HTMLDivElement>(null);
+    const onEndedRef = useRef(onEnded);
+    useEffect(() => {
+      onEndedRef.current = onEnded;
+    }, [onEnded]);
     const playerRef = useRef<YTPlayerInstance | null>(null);
     const [isPlayerReady, setIsPlayerReady] = useState(false);
 
@@ -119,11 +127,17 @@ const YouTubePlayer = memo(
             setIsPlayerReady(true);
           },
           onStateChange: (state, readyPlayer) => {
+            const YT = window.YT!;
+            // Every viewer reports their own ended state, not only the host:
+            // the "watched to the end" stickers are per person.
+            if (state === YT.PlayerState.ENDED) {
+              onEndedRef.current?.();
+            }
+
             if (!isHost) {
               return;
             }
 
-            const YT = window.YT!;
             if (state === YT.PlayerState.PLAYING) {
               handleHostStateChangeRef.current(true, readyPlayer.getCurrentTime());
             } else if (state === YT.PlayerState.PAUSED) {
@@ -160,6 +174,7 @@ const RutubePlayer = memo(
     onPlay,
     onPause,
     onSeek,
+    onEnded,
     isHost,
     initialPosition = 0,
     initialIsPlaying = false,
@@ -169,11 +184,16 @@ const RutubePlayer = memo(
     onPlay: (position: number) => void;
     onPause: (position: number) => void;
     onSeek: (position: number) => void;
+    onEnded?: () => void;
     isHost: boolean;
     initialPosition?: number;
     initialIsPlaying?: boolean;
   }) => {
     const iframeRef = useRef<HTMLIFrameElement>(null);
+    const onEndedRef = useRef(onEnded);
+    useEffect(() => {
+      onEndedRef.current = onEnded;
+    }, [onEnded]);
     const currentTimeRef = useRef(0);
     const [isPlayerReady, setIsPlayerReady] = useState(false);
 
@@ -236,6 +256,8 @@ const RutubePlayer = memo(
               handleHostStateChange(true, currentTimeRef.current);
             } else if (state === 'paused' || state === 'pause') {
               handleHostStateChange(false, currentTimeRef.current);
+            } else if (state === 'ended') {
+              onEndedRef.current?.();
             }
           }
 
@@ -276,6 +298,7 @@ export function VideoPlayer({
   onPlay,
   onPause,
   onSeek,
+  onEnded,
 }: VideoPlayerProps) {
   const cleanUrl = url ? url.trim() : '';
   const videoType = cleanUrl ? getVideoType(cleanUrl) : 'file';
@@ -313,6 +336,7 @@ export function VideoPlayer({
           onPlay={onPlay}
           onPause={onPause}
           onSeek={onSeek}
+          onEnded={onEnded}
           isHost={isHost}
           initialPosition={initialPosition}
           initialIsPlaying={initialIsPlaying}
@@ -340,6 +364,7 @@ export function VideoPlayer({
           onPlay={onPlay}
           onPause={onPause}
           onSeek={onSeek}
+          onEnded={onEnded}
           isHost={isHost}
           initialPosition={initialPosition}
           initialIsPlaying={initialIsPlaying}

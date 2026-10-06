@@ -23,13 +23,13 @@ def _headers():
 async def test_grant_achievement_rejects_wrong_secret(client):
     resp = await client.post(
         "/auth/register",
-        json={"email": "secret@cowatch.fun", "password": "hunter2hunter2"},
+        json={"email": "secret@cowatch.fun", "username": "secret", "password": "hunter2hunter2"},
     )
     user_id = resp.json()["id"]
 
     resp = await client.post(
         "/internal/achievements/grant",
-        json={"user_id": user_id, "achievement_title": "Хозяин вечеринки"},
+        json={"user_id": user_id, "achievement_code": "first_room"},
         headers={"X-Internal-Secret": "wrong-secret"},
     )
     assert resp.status_code == 401
@@ -42,13 +42,13 @@ async def test_grant_achievement_is_idempotent(client):
     задублированные ачивки в списке."""
     register_resp = await client.post(
         "/auth/register",
-        json={"email": "idempotent@cowatch.fun", "password": "hunter2hunter2"},
+        json={"email": "idempotent@cowatch.fun", "username": "idempotent", "password": "hunter2hunter2"},
     )
     user_id = register_resp.json()["id"]
 
     first = await client.post(
         "/internal/achievements/grant",
-        json={"user_id": user_id, "achievement_title": "Хозяин вечеринки"},
+        json={"user_id": user_id, "achievement_code": "first_room"},
         headers=_headers(),
     )
     assert first.status_code == 200
@@ -56,15 +56,44 @@ async def test_grant_achievement_is_idempotent(client):
 
     second = await client.post(
         "/internal/achievements/grant",
-        json={"user_id": user_id, "achievement_title": "Хозяин вечеринки"},
+        json={"user_id": user_id, "achievement_code": "first_room"},
         headers=_headers(),
     )
     assert second.status_code == 200
     assert second.json() == {"granted": False, "reason": "already_granted"}
 
     profile_resp = await client.get(f"/auth/profile/{user_id}")
-    titles = [a["title"] for a in profile_resp.json()["achievements"]]
-    assert titles.count("Хозяин вечеринки") == 1
+    unlocked = [a["code"] for a in profile_resp.json()["achievements"] if a["unlocked_at"]]
+    assert unlocked.count("first_room") == 1
+
+
+@pytest.mark.asyncio
+async def test_grant_achievement_accepts_legacy_title(client):
+    """Старый notifications шлёт achievement_title — на время раскатки auth
+    принимает и его, маппя на code через LEGACY_TITLE_TO_CODE."""
+    register_resp = await client.post(
+        "/auth/register",
+        json={"email": "legacy@cowatch.fun", "username": "legacy", "password": "hunter2hunter2"},
+    )
+    user_id = register_resp.json()["id"]
+
+    resp = await client.post(
+        "/internal/achievements/grant",
+        json={"user_id": user_id, "achievement_title": "Марафонец"},
+        headers=_headers(),
+    )
+    assert resp.json() == {"granted": True, "reason": None}
+
+    resp = await client.post(
+        "/internal/achievements/grant",
+        json={"user_id": user_id, "achievement_code": "no_such_sticker"},
+        headers=_headers(),
+    )
+    assert resp.json() == {"granted": False, "reason": "unknown_achievement"}
+
+    profile_resp = await client.get(f"/auth/profile/{user_id}")
+    unlocked = {a["code"] for a in profile_resp.json()["achievements"] if a["unlocked_at"]}
+    assert unlocked == {"first_step", "marathon"}
 
 
 @pytest.mark.asyncio
@@ -73,7 +102,7 @@ async def test_grant_achievement_skips_unknown_user_guest(client):
     через internal API должна тихо no-op'нуться, а не падать на FK."""
     resp = await client.post(
         "/internal/achievements/grant",
-        json={"user_id": 999999, "achievement_title": "Хозяин вечеринки"},
+        json={"user_id": 999999, "achievement_code": "first_room"},
         headers=_headers(),
     )
     assert resp.status_code == 200
@@ -103,7 +132,7 @@ async def test_user_achievement_unique_constraint_rejects_duplicate_row(client):
     поднимет IntegrityError на равно втором вызове."""
     register_resp = await client.post(
         "/auth/register",
-        json={"email": "constraint@cowatch.fun", "password": "hunter2hunter2"},
+        json={"email": "constraint@cowatch.fun", "username": "constraint", "password": "hunter2hunter2"},
     )
     user_id = register_resp.json()["id"]
 
@@ -148,13 +177,13 @@ async def test_grant_achievement_concurrent_calls_leave_a_single_row(client):
     того, как их раскидает планировщик."""
     register_resp = await client.post(
         "/auth/register",
-        json={"email": "concurrent@cowatch.fun", "password": "hunter2hunter2"},
+        json={"email": "concurrent@cowatch.fun", "username": "concurrent", "password": "hunter2hunter2"},
     )
     user_id = register_resp.json()["id"]
 
     async def _grant():
         async with async_session() as db:
-            return await grant_achievement(db, user_id, "Хозяин вечеринки")
+            return await grant_achievement(db, user_id, "first_room")
 
     results = await asyncio.gather(*(_grant() for _ in range(10)))
 
@@ -182,7 +211,7 @@ async def test_grant_achievement_concurrent_calls_leave_a_single_row(client):
 async def test_record_history_updates_profile_totals(client):
     register_resp = await client.post(
         "/auth/register",
-        json={"email": "history@cowatch.fun", "password": "hunter2hunter2"},
+        json={"email": "history@cowatch.fun", "username": "history", "password": "hunter2hunter2"},
     )
     user_id = register_resp.json()["id"]
 
@@ -203,3 +232,15 @@ async def test_record_history_updates_profile_totals(client):
     body = profile_resp.json()
     assert body["total_movies"] == 1
     assert body["total_hours"] == 2.0
+
+    # Итоги считаются по всей истории, а не по последним 10 записям списка.
+    for i in range(12):
+        await client.post(
+            "/internal/history/record",
+            json={"user_id": user_id, "movie_title": f"Фильм {i}", "duration_seconds": 1800},
+            headers=_headers(),
+        )
+    body = (await client.get(f"/auth/profile/{user_id}")).json()
+    assert len(body["history"]) == 10
+    assert body["total_movies"] == 13
+    assert body["total_hours"] == 8.0

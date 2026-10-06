@@ -53,7 +53,7 @@ export function RoomPage() {
     }
   }, [isInitialized, isAuthenticated, navigate]);
 
-  const { messages, videoEvents, isConnected, sendChatMessage, sendVideoEvent, sendReaction, isHost } = useRoomWebSocket({
+  const { messages, videoEvents, isConnected, sendChatMessage, sendVideoEvent, sendVideoEnded, sendReaction, isHost } = useRoomWebSocket({
     code: code || '',
     userId: user?.id || 1,
     username: user?.username || 'User',
@@ -217,6 +217,10 @@ export function RoomPage() {
     sendVideoEvent('video_seek', position);
   }, [sendVideoEvent]);
 
+  const handleVideoEnded = useCallback(() => {
+    sendVideoEnded();
+  }, [sendVideoEnded]);
+
   if (isLoading) {
     return (
       <div className="relative grid min-h-screen place-items-center p-6 text-cream">
@@ -316,6 +320,7 @@ export function RoomPage() {
               onPlay={handleVideoPlay}
               onPause={handleVideoPause}
               onSeek={handleVideoSeek}
+              onEnded={handleVideoEnded}
             />
             <ReactionOverlay reactions={activeReactions} />
 
